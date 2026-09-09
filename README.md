@@ -61,6 +61,14 @@ ctest --test-dir build
 | Windows 앱 셸 / MF 캡처 | ⬜ 미구현 |
 | U-Net / MinuNet ONNX | ⬜ 미구현 (dev_plan V5/V6b) |
 
+## 논문 원문
+
+구현 대상 논문 3편의 PDF 원문이 저장소 루트에 포함되어 있다. 모두 오픈액세스이며,
+출처·라이선스·파생물 관계는 **[NOTICE.md](NOTICE.md)** 에 정리했다.
+
+> Oduah et al.(2021)만 **CC BY-NC-ND**(비영리·변경금지)이므로, 상업적 이용 시
+> 해당 PDF와 변환본을 제외해야 한다.
+
 ## 데이터 취급
 
 - 생체 원본은 **저장소에 커밋하지 않는다** (`.gitignore`: `datasets/`, `captures/`, `*.bmp`)
