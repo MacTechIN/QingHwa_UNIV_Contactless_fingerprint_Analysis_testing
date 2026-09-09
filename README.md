@@ -74,3 +74,10 @@ ctest --test-dir build
 - 생체 원본은 **저장소에 커밋하지 않는다** (`.gitignore`: `datasets/`, `captures/`, `*.bmp`)
 - `--dump`는 디버그 전용. 운영 빌드에서는 원본 비저장이 기본이어야 한다 (dev_plan V9-µ2)
 - `assets/real/`의 샘플은 구현 대상 논문에 실린 도판에서 추출한 것
+
+---
+
+## 최종제작
+
+**Sam LEE**
+[hotnewton@korea.ac.kr](mailto:hotnewton@korea.ac.kr) · [wooriszhome@gmail.com](mailto:wooriszhome@gmail.com)
