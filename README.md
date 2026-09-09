@@ -1,0 +1,68 @@
+# Contactless Fingerprint Recognition — MVP 테스트 앱 (C++20)
+
+비접촉 지문인식 논문 3편을 분석하고, 그중 Chowdhury & Imtiaz(2022) 리뷰가 정리한
+**고전 파이프라인**을 Windows 네이티브 C++로 구현한 검증용 테스트 하네스.
+
+각 처리 스택이 **논문의 어느 주장을 구현했는지**를 코드에 내장하고,
+실행할 때마다 실측값과 대조한 **HTML/PDF 보고서를 자동 생성**한다.
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [docs/README.md](docs/README.md) | 논문 3편 변환본 + 구현 기술 리서치 |
+| [docs/03_.../research.md](docs/03_chowdhury2022_dl_review/research.md) | 구현에 필요한 관련기술 총정리 |
+| [docs/03_.../dev_plan.md](docs/03_chowdhury2022_dl_review/dev_plan.md) | 개발 계획서 (수직 절편 V0~V9 / µ-step) |
+| **[docs/03_.../code_review.md](docs/03_chowdhury2022_dl_review/code_review.md)** | **코드리뷰 + 실촬영 검증 결과 (발표자료용)** |
+
+## 파이프라인
+
+```
+획득 → 품질게이트 → YCbCr 분할/ROI 정규화 → CLAHE 정규화
+    → 방향장 → 융선주파수 → Gabor 향상 → 이진화 → 세선화
+    → Crossing Number 미뉴셔 → 국소구조+RANSAC 정합 → EER/DET/CMC
+```
+
+## 빌드
+
+**Windows (타깃)**
+```powershell
+vcpkg install opencv4[contrib,png,jpeg]:x64-windows
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+**Linux (CI/검증)**
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<opencv-prefix>
+cmake --build build -j
+ctest --test-dir build
+```
+
+## 실행
+
+```bash
+./build/cfp_cli --demo                                  # 합성 지문 데모
+./build/cfp_cli --image finger.png --dump out/stages    # 실사진 + 단계별 PNG 덤프
+./build/cfp_cli --image a.png --match b.png --out out   # 두 장 매칭 + 보고서
+./build/cfp_cli --image a.png --no-pdf                  # PDF 생략(HTML만)
+```
+
+실행하면 `out/report.html` (자족형, 이미지 인라인) 과 `out/report.pdf` 가 생성된다.
+
+## 현재 상태
+
+| 항목 | 상태 |
+|---|---|
+| 빌드 | ✅ g++ 11.4 / C++20 / OpenCV 4.10 |
+| 테스트 | ✅ 30/30 (metrics 12, matcher 10, pipeline 8) |
+| 실촬영 파이프라인 | ✅ 미뉴셔 29개, coherence 0.991, 융선주기 7.36 px |
+| 실촬영 매칭 | ⚠️ 단일 변형 0.22~0.47 / 복합 열화 0.09 — [code_review.md §4.2](docs/03_chowdhury2022_dl_review/code_review.md) |
+| Windows 앱 셸 / MF 캡처 | ⬜ 미구현 |
+| U-Net / MinuNet ONNX | ⬜ 미구현 (dev_plan V5/V6b) |
+
+## 데이터 취급
+
+- 생체 원본은 **저장소에 커밋하지 않는다** (`.gitignore`: `datasets/`, `captures/`, `*.bmp`)
+- `--dump`는 디버그 전용. 운영 빌드에서는 원본 비저장이 기본이어야 한다 (dev_plan V9-µ2)
+- `assets/real/`의 샘플은 구현 대상 논문에 실린 도판에서 추출한 것
