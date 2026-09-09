@@ -41,6 +41,12 @@ powershell -ExecutionPolicy Bypass -File build_windows.ps1 -Run
 winget install Git.Git Kitware.CMake Microsoft.VisualStudio.2022.BuildTools
 ```
 
+> ⚠️ **경로에 한글이 있으면 안 됩니다.**
+> vcpkg는 비ASCII 경로에서 내부 도구(ninja 등) 취득에 실패한다.
+> 스크립트는 vcpkg를 `C:\vcpkg`(ASCII)에 설치해 이를 우회하지만,
+> 그래도 실패하면 저장소 자체를 `C:\dev\` 같은 ASCII 경로로 옮기고 다시 시도할 것.
+> 다른 위치를 쓰려면 `-VcpkgRoot D:\vcpkg` 처럼 지정한다.
+
 ### 수동
 
 ```powershell

@@ -12,7 +12,11 @@
 param(
     [switch]$Run,                       # 빌드 후 바로 실행
     [switch]$SkipTests,
-    [string]$VcpkgRoot = "$env:USERPROFILE\vcpkg"
+    # [중요] 반드시 ASCII 전용 경로여야 한다.
+    # vcpkg는 경로에 한글 등 비ASCII 문자가 있으면 내부 도구(ninja 등) 취득 단계에서
+    # "no such file or directory"로 실패한다. 한국어 Windows의 기본 사용자 폴더
+    # (C:\Users\홍길동)가 그대로 걸리는 함정이다.
+    [string]$VcpkgRoot = "C:\vcpkg"
 )
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -51,11 +55,33 @@ if (Test-Path $vswhere) {
     Write-Warning "vswhere를 찾지 못했습니다. Visual Studio 설치 여부를 확인하세요."
 }
 
+Step "경로 점검 (비ASCII 문자)"
+function Test-Ascii([string]$p) { return ($p -notmatch '[^\x00-\x7F]') }
+
+if (-not (Test-Ascii $VcpkgRoot)) {
+    Write-Warning "vcpkg 경로에 비ASCII 문자가 있습니다: $VcpkgRoot"
+    $VcpkgRoot = "C:\vcpkg"
+    Info "ASCII 경로로 대체합니다: $VcpkgRoot"
+}
+if (-not (Test-Ascii $root)) {
+    Write-Warning ("프로젝트 경로에 한글이 포함되어 있습니다:`n  $root`n" +
+        "  MSVC/CMake는 대개 문제없지만, 빌드가 계속 실패하면 " +
+        "C:\dev\ 같은 ASCII 경로로 저장소를 옮겨 다시 시도하세요.")
+}
+Info "vcpkg 경로 : $VcpkgRoot"
+
 Step "vcpkg 준비"
 if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
     if (-not (Test-Path $VcpkgRoot)) {
-        Info "vcpkg 클론 중..."
+        Info "vcpkg 클론 중... ($VcpkgRoot)"
+        try {
+            New-Item -ItemType Directory -Force -Path $VcpkgRoot | Out-Null
+        } catch {
+            throw ("$VcpkgRoot 를 만들 수 없습니다. 관리자 권한으로 한 번 실행하거나 " +
+                   "-VcpkgRoot D:\vcpkg 처럼 쓰기 가능한 ASCII 경로를 지정하세요.")
+        }
         git clone --depth 1 https://github.com/microsoft/vcpkg.git $VcpkgRoot
+        if ($LASTEXITCODE -ne 0) { throw "vcpkg 클론 실패" }
     }
     & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
     if ($LASTEXITCODE -ne 0) { throw "vcpkg 부트스트랩 실패" }
@@ -63,13 +89,18 @@ if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
 Info "vcpkg : $VcpkgRoot"
 
 Step "OpenCV 설치 (최초 1회 20~40분 소요)"
-# [manifest 모드] 저장소 루트에 vcpkg.json이 있으면 vcpkg는 manifest 모드로 동작한다.
-# 이 모드에서는 패키지 이름을 인자로 줄 수 없고(오류), 의존성은 vcpkg.json에서 읽는다.
-# 반드시 매니페스트가 있는 디렉터리에서 인자 없이 실행해야 한다.
-# 산출물은 <repo>/vcpkg_installed/ 아래에 생기며, CMake 툴체인이 자동으로 찾는다.
-Push-Location $root
+# [왜 classic 모드인가]
+# manifest 모드는 설치 트리를 <repo>/vcpkg_installed/ 에 만든다. 저장소가
+# 한글 경로(C:\Users\이상진\...)에 있으면 그 경로가 vcpkg 내부 도구 취득 단계에서
+# 깨진다. classic 모드로 ASCII 경로(C:\vcpkg\installed)에 설치하면 이 문제를 피한다.
+# vcpkg.json은 의존성 문서로 남기고, CMake에는 VCPKG_MANIFEST_MODE=OFF를 넘긴다.
+$env:VCPKG_DOWNLOADS = Join-Path $VcpkgRoot "downloads"
+$env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+
+Push-Location $VcpkgRoot          # 매니페스트가 없는 위치에서 실행
 try {
-    & (Join-Path $VcpkgRoot "vcpkg.exe") install --triplet x64-windows
+    & (Join-Path $VcpkgRoot "vcpkg.exe") install --classic `
+        "opencv4[contrib,png,jpeg]:x64-windows"
     if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패 (vcpkg install)" }
 } finally {
     Pop-Location
@@ -80,7 +111,8 @@ $toolchain = Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"
 $buildDir  = Join-Path $root "build"
 cmake -S $root -B $buildDir -A x64 `
       -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
-      -DVCPKG_TARGET_TRIPLET=x64-windows
+      -DVCPKG_TARGET_TRIPLET=x64-windows `
+      -DVCPKG_MANIFEST_MODE=OFF
 if ($LASTEXITCODE -ne 0) { throw "CMake 구성 실패" }
 
 Step "빌드"
