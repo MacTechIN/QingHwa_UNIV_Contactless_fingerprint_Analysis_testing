@@ -6,7 +6,7 @@
 #include <vector>
 
 #include <opencv2/imgproc.hpp>
-#include <opencv2/ximgproc.hpp>
+#include "cfp/thinning.hpp"
 
 namespace cfp {
 
@@ -354,7 +354,7 @@ EnhanceResult GaborRidgeEnhancer::enhance(const cv::Mat& roi_gray,
 
     // --- 세선화 (Zhang-Suen) ---
     // 미뉴셔 정의(Crossing Number)가 1픽셀 두께 스켈레톤을 전제로 한다.
-    cv::ximgproc::thinning(r.binary, r.skeleton, cv::ximgproc::THINNING_ZHANGSUEN);
+    zhang_suen_thinning(r.binary, r.skeleton);
 
     // -------------------------------------------------------------------------
     //  [핵심] 마스크 경계선이 만드는 가짜 융선 제거

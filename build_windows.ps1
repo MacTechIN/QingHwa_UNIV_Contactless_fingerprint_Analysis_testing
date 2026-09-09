@@ -88,7 +88,7 @@ if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
 }
 Info "vcpkg : $VcpkgRoot"
 
-Step "OpenCV 설치 (최초 1회 20~40분 소요)"
+Step "OpenCV 설치 (최초 1회 5~15분 소요)"
 # [왜 classic 모드인가]
 # manifest 모드는 설치 트리를 <repo>/vcpkg_installed/ 에 만든다. 저장소가
 # 한글 경로(C:\Users\이상진\...)에 있으면 그 경로가 vcpkg 내부 도구 취득 단계에서
@@ -99,8 +99,12 @@ $env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
 
 Push-Location $VcpkgRoot          # 매니페스트가 없는 위치에서 실행
 try {
+    # [최소 기능] 기본 기능(dnn/gapi/highgui/tiff/webp/quirc...)을 모두 끈다.
+    # dnn -> protobuf -> abseil 연쇄가 빌드 실패의 원인이었고, 우리는 dnn을 쓰지 않는다.
+    # core/imgproc/imgcodecs만 있으면 되며 png/jpeg는 libpng/libjpeg-turbo만 추가한다.
+    # 빌드 시간이 30~40분에서 5~10분 수준으로 줄어든다.
     & (Join-Path $VcpkgRoot "vcpkg.exe") install --classic `
-        "opencv4[contrib,png,jpeg]:x64-windows"
+        "opencv4[png,jpeg,fs,thread,intrinsics]:x64-windows"
     if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패 (vcpkg install)" }
 } finally {
     Pop-Location

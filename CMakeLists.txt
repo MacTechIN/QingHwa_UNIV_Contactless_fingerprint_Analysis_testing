@@ -8,7 +8,12 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc imgcodecs ximgproc)
+# [의존성 최소화] ximgproc(opencv_contrib)을 쓰지 않는다.
+# 세선화 함수 하나 때문에 contrib 전체를 끌어오면 vcpkg에서
+# contrib -> dnn -> protobuf -> abseil 연쇄가 발생해 빌드가 수십 분 늘고
+# 실패 지점도 늘어난다(실제로 Windows 빌드가 abseil에서 실패했다).
+# Zhang-Suen은 src/thinning.cpp에 직접 구현했고 OpenCV 구현과 대조 검증했다.
+find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc imgcodecs)
 
 # -----------------------------------------------------------------------------
 # cfp_core — OpenCV 비의존. 매칭/평가/해설 텍스트.
@@ -25,6 +30,7 @@ target_include_directories(cfp_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # cfp_imaging — 영상 파이프라인 (OpenCV 의존)
 # -----------------------------------------------------------------------------
 add_library(cfp_imaging STATIC
+  src/thinning.cpp
   src/quality.cpp
   src/segmenter_ycbcr.cpp
   src/enhancer_gabor.cpp
