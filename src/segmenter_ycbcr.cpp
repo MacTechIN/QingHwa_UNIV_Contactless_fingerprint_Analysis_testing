@@ -1,6 +1,6 @@
 #include "cfp/segmenter.hpp"
 
-#include <opencv2/imgproc.hpp>
+#include "cfp/cv_compat.hpp"
 
 namespace cfp {
 

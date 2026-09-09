@@ -17,6 +17,14 @@ endif()
 # 사용하는 API가 core/imgproc/imgcodecs의 안정 표면뿐이라 4.5~5.x에서 동일하게 동작한다.
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 message(STATUS "OpenCV ${OpenCV_VERSION}  (${OpenCV_DIR})")
+
+# OpenCV 5.x는 2D 기하 함수(minAreaRect / contourArea / getRotationMatrix2D)를
+# imgproc에서 새 geometry 모듈로 옮겼다. 5 이상이면 그 컴포넌트를 추가로 요구한다.
+# (4.x에는 geometry 모듈이 없으므로 조건부로만 넣는다)
+if(OpenCV_VERSION VERSION_GREATER_EQUAL 5)
+  message(STATUS "OpenCV 5.x 감지 - geometry 모듈 추가")
+  find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs geometry)
+endif()
 if(OpenCV_VERSION VERSION_LESS 4.5)
   message(FATAL_ERROR "OpenCV 4.5 이상이 필요합니다. 발견된 버전: ${OpenCV_VERSION}")
 endif()
