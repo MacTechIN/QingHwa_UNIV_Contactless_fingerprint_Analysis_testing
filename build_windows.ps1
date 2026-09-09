@@ -74,17 +74,39 @@ if (-not (Test-Ascii $root)) {
 # -----------------------------------------------------------------------------
 Step "OpenCV 탐색"
 
+# -----------------------------------------------------------------------------
+#  OpenCVConfig.cmake 탐색
+#
+#  [주의] 공식 Windows 배포판에는 OpenCVConfig.cmake가 여러 곳에 있다:
+#    <root>\build\OpenCVConfig.cmake              <- 이걸 써야 한다(컴파일러 자동 선택)
+#    <root>\build\x64\vc16\lib\OpenCVConfig.cmake  <- 특정 툴셋 전용
+#    <root>\build\x64\vc17\lib\OpenCVConfig.cmake
+#  아무거나 집으면 툴셋이 어긋나 링크가 깨진다.
+#  또 압축 해제 방식에 따라 C:\opencv\build 일 수도, C:\opencv\opencv\build 일 수도 있다.
+#  그래서 재귀 탐색 후 (1) 부모 폴더가 build 인 것을 우선하고 (2) 경로가 가장 얕은 것을 고른다.
+# -----------------------------------------------------------------------------
 function Find-OpenCVConfig([string]$base) {
     if ([string]::IsNullOrWhiteSpace($base) -or -not (Test-Path $base)) { return $null }
-    # OpenCVConfig.cmake 가 있는 디렉터리를 찾는다. 공식 배포판은 <root>\build 에 둔다.
-    $hit = Get-ChildItem -Path $base -Filter "OpenCVConfig.cmake" -Recurse `
-             -ErrorAction SilentlyContinue -Depth 4 | Select-Object -First 1
-    if ($hit) { return $hit.Directory.FullName }
-    return $null
+
+    $hits = Get-ChildItem -Path $base -Filter "OpenCVConfig.cmake" -File -Recurse `
+              -Depth 5 -ErrorAction SilentlyContinue
+    if (-not $hits) { return $null }
+
+    Info "발견된 OpenCVConfig.cmake:"
+    foreach ($h in $hits) { Info ("  - " + $h.FullName) }
+
+    $ranked = $hits | Sort-Object `
+        @{ Expression = { if ($_.Directory.Name -ieq "build") { 0 } else { 1 } } }, `
+        @{ Expression = { ($_.FullName -split '\\').Count } }
+    return $ranked[0].Directory.FullName
 }
 
 $cvDir = $null
-foreach ($cand in @($OpenCVDir, "C:\opencv", "C:\opencv\build")) {
+$candidates = @($OpenCVDir,
+                "C:\opencv", "C:\opencv\opencv",
+                "C:\opencv\build", "C:\opencv\opencv\build",
+                "$env:SystemDrive\opencv")
+foreach ($cand in $candidates) {
     if ([string]::IsNullOrWhiteSpace($cand)) { continue }
     $found = Find-OpenCVConfig $cand
     if ($found) { $cvDir = $found; break }
@@ -99,7 +121,8 @@ if ($cvDir) {
     }
 } else {
     Info "프리빌트 OpenCV를 찾지 못했습니다. vcpkg로 빌드합니다."
-    Info "(이미 받아두셨다면 -OpenCVDir C:\opencv 처럼 경로를 지정하세요)"
+    Info "(이미 받아두셨다면 -OpenCVDir <경로> 로 지정하세요)"
+    Info "확인 방법: Get-ChildItem C:\opencv -Filter OpenCVConfig.cmake -Recurse | Select FullName"
 }
 
 if ($useVcpkg) {
