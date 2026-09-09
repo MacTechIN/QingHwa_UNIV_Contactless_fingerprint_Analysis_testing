@@ -71,6 +71,12 @@ if(WIN32)
                                              WIN32_LEAN_AND_MEAN)
   set_target_properties(cfp_app PROPERTIES OUTPUT_NAME "ContactlessFP")
 
+  # wWinMain(유니코드 진입점)을 쓰므로 진입점을 명시한다.
+  # 생략하면 링커가 WinMain을 찾다가 unresolved external symbol로 실패할 수 있다.
+  if(MSVC)
+    target_link_options(cfp_app PRIVATE "/ENTRY:wWinMainCRTStartup")
+  endif()
+
   # MSVC: UTF-8 소스 인코딩 명시 (한글 문자열 리터럴이 깨지지 않도록)
   if(MSVC)
     target_compile_options(cfp_app     PRIVATE /utf-8)
