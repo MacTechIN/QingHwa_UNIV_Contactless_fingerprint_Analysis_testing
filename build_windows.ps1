@@ -63,8 +63,17 @@ if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
 Info "vcpkg : $VcpkgRoot"
 
 Step "OpenCV 설치 (최초 1회 20~40분 소요)"
-& (Join-Path $VcpkgRoot "vcpkg.exe") install "opencv4[contrib,png,jpeg]:x64-windows"
-if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패" }
+# [manifest 모드] 저장소 루트에 vcpkg.json이 있으면 vcpkg는 manifest 모드로 동작한다.
+# 이 모드에서는 패키지 이름을 인자로 줄 수 없고(오류), 의존성은 vcpkg.json에서 읽는다.
+# 반드시 매니페스트가 있는 디렉터리에서 인자 없이 실행해야 한다.
+# 산출물은 <repo>/vcpkg_installed/ 아래에 생기며, CMake 툴체인이 자동으로 찾는다.
+Push-Location $root
+try {
+    & (Join-Path $VcpkgRoot "vcpkg.exe") install --triplet x64-windows
+    if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패 (vcpkg install)" }
+} finally {
+    Pop-Location
+}
 
 Step "CMake 구성"
 $toolchain = Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"

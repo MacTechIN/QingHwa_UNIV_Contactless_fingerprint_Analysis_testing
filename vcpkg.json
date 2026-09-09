@@ -1,9 +1,12 @@
 {
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "contactless-fp",
   "version": "0.1.0",
   "description": "Contactless fingerprint recognition MVP test app (Windows native, C++20)",
   "dependencies": [
-    { "name": "opencv4", "features": ["contrib", "png", "jpeg"] }
-  ],
-  "builtin-baseline": "0000000000000000000000000000000000000000"
+    {
+      "name": "opencv4",
+      "features": [ "contrib", "png", "jpeg" ]
+    }
+  ]
 }
