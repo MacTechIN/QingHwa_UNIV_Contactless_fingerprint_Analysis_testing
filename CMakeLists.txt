@@ -57,9 +57,28 @@ endif()
 # Windows 네이티브 앱 (WinUI 3 셸은 별도 vcxproj, 여기서는 캡처 백엔드만)
 # -----------------------------------------------------------------------------
 if(WIN32)
+  # 카메라 캡처 (Media Foundation)
   add_library(cfp_capture STATIC src/capture_mf.cpp)
   target_link_libraries(cfp_capture PUBLIC cfp_imaging
-    mf mfplat mfreadwrite mfuuid ole32 shlwapi)
+    mf mfplat mfreadwrite mfuuid ole32 oleaut32 shlwapi strmiids)
+  target_compile_definitions(cfp_capture PUBLIC UNICODE _UNICODE)
+
+  # Win32 네이티브 GUI 앱
+  #  WIN32 키워드 = /SUBSYSTEM:WINDOWS (콘솔 창이 뜨지 않는다)
+  add_executable(cfp_app WIN32 app/main_win32.cpp app/app.manifest)
+  target_link_libraries(cfp_app PRIVATE cfp_capture comctl32 comdlg32 shell32)
+  target_compile_definitions(cfp_app PRIVATE UNICODE _UNICODE NOMINMAX
+                                             WIN32_LEAN_AND_MEAN)
+  set_target_properties(cfp_app PROPERTIES OUTPUT_NAME "ContactlessFP")
+
+  # MSVC: UTF-8 소스 인코딩 명시 (한글 문자열 리터럴이 깨지지 않도록)
+  if(MSVC)
+    target_compile_options(cfp_app     PRIVATE /utf-8)
+    target_compile_options(cfp_capture PRIVATE /utf-8)
+    target_compile_options(cfp_imaging PRIVATE /utf-8)
+    target_compile_options(cfp_core    PRIVATE /utf-8)
+    target_compile_options(cfp_cli     PRIVATE /utf-8)
+  endif()
 endif()
 
 # -----------------------------------------------------------------------------

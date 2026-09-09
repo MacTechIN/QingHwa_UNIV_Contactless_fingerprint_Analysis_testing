@@ -23,16 +23,48 @@
     → Crossing Number 미뉴셔 → 국소구조+RANSAC 정합 → EER/DET/CMC
 ```
 
-## 빌드
+## 빌드 & 실행 — Windows
 
-**Windows (타깃)**
+### 원클릭 (권장)
+
 ```powershell
-vcpkg install opencv4[contrib,png,jpeg]:x64-windows
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
-cmake --build build --config Release
+git clone https://github.com/MacTechIN/QingHwa_UNIV_Contactless_fingerprint_Analysis_testing.git
+cd QingHwa_UNIV_Contactless_fingerprint_Analysis_testing
+powershell -ExecutionPolicy Bypass -File build_windows.ps1 -Run
 ```
 
-**Linux (CI/검증)**
+스크립트가 vcpkg 설치 → OpenCV 빌드 → 앱 빌드 → 테스트 → 실행까지 처리한다.
+**최초 실행은 OpenCV 빌드 때문에 20~40분** 걸린다(이후 캐시되어 수 분).
+
+선행 요구: **Git**, **CMake**, **Visual Studio 2022 빌드도구(C++ 데스크톱 개발 워크로드)**
+```powershell
+winget install Git.Git Kitware.CMake Microsoft.VisualStudio.2022.BuildTools
+```
+
+### 수동
+
+```powershell
+vcpkg install "opencv4[contrib,png,jpeg]:x64-windows"
+cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=<vcpkg>\scripts\buildsystems\vcpkg.cmake
+cmake --build build --config Release
+.\build\Release\ContactlessFP.exe
+```
+
+### 앱 사용법
+
+| 버튼 | 동작 |
+|---|---|
+| **카메라 시작** | Media Foundation으로 웹캠 프리뷰 (약 30fps) |
+| **AE/AF 잠금** | 자동 노출·초점·화이트밸런스 수동 고정 ← 조도/거리 실험의 **필수 전제** |
+| **사진 열기** | PNG/JPG 파일 입력 |
+| **▶ 실행** | 파이프라인 실행 → 단계별 썸네일 + 논문 대조 해설 출력 |
+| **보고서** | `out/report.html` · `out/report.pdf` 생성 후 자동 열기 |
+
+> 노트북 내장 카메라는 수동 노출 제어를 지원하지 않는 경우가 많다.
+> 미지원 시 앱이 경고를 띄운다 — 수동제어 지원 UVC 웹캠 사용을 권장한다.
+
+## 빌드 — Linux (CI/검증)
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<opencv-prefix>
 cmake --build build -j
@@ -58,7 +90,7 @@ ctest --test-dir build
 | 테스트 | ✅ 30/30 (metrics 12, matcher 10, pipeline 8) |
 | 실촬영 파이프라인 | ✅ 미뉴셔 29개, coherence 0.991, 융선주기 7.36 px |
 | 실촬영 매칭 | ⚠️ 단일 변형 0.22~0.47 / 복합 열화 0.09 — [code_review.md §4.2](docs/03_chowdhury2022_dl_review/code_review.md) |
-| Windows 앱 셸 / MF 캡처 | ⬜ 미구현 |
+| Windows 앱 (Win32) / MF 캡처 | ✅ 구현 (실기 실행은 Windows에서 확인 필요) |
 | U-Net / MinuNet ONNX | ⬜ 미구현 (dev_plan V5/V6b) |
 
 ## 논문 원문
