@@ -1,0 +1,31 @@
+# 빌드 산출물
+build/
+out/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.vcxproj.filters
+
+# 실행 산출물
+report.html
+report.pdf
+*.log
+
+# 생체 데이터 — 절대 커밋 금지 (research.md §8 / dev_plan V9-µ2)
+# 실제 지문 원본은 어떤 경우에도 저장소에 올리지 않는다.
+datasets/
+captures/
+*.bmp
