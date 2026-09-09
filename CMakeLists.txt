@@ -13,7 +13,13 @@ endif()
 # contrib -> dnn -> protobuf -> abseil 연쇄가 발생해 빌드가 수십 분 늘고
 # 실패 지점도 늘어난다(실제로 Windows 빌드가 abseil에서 실패했다).
 # Zhang-Suen은 src/thinning.cpp에 직접 구현했고 OpenCV 구현과 대조 검증했다.
-find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc imgcodecs)
+# 버전을 못박지 않는다. OpenCV 4.x 프리빌트/vcpkg 빌드와 5.x 프리빌트를 모두 받는다.
+# 사용하는 API가 core/imgproc/imgcodecs의 안정 표면뿐이라 4.5~5.x에서 동일하게 동작한다.
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+message(STATUS "OpenCV ${OpenCV_VERSION}  (${OpenCV_DIR})")
+if(OpenCV_VERSION VERSION_LESS 4.5)
+  message(FATAL_ERROR "OpenCV 4.5 이상이 필요합니다. 발견된 버전: ${OpenCV_VERSION}")
+endif()
 
 # -----------------------------------------------------------------------------
 # cfp_core — OpenCV 비의존. 매칭/평가/해설 텍스트.
@@ -81,6 +87,26 @@ if(WIN32)
   # 생략하면 링커가 WinMain을 찾다가 unresolved external symbol로 실패할 수 있다.
   if(MSVC)
     target_link_options(cfp_app PRIVATE "/ENTRY:wWinMainCRTStartup")
+  endif()
+
+  # ---------------------------------------------------------------------------
+  # 런타임 DLL을 실행 파일 옆으로 복사한다.
+  #
+  # [왜 필요한가] OpenCV 공식 Windows 프리빌트는 동적 라이브러리(opencv_worldXXX.dll)다.
+  # PATH에 없으면 앱이 "DLL을 찾을 수 없습니다"로 시작조차 못 한다.
+  # 사용자가 환경변수를 만지게 하는 대신 빌드 산출물 옆에 복사해 둔다.
+  # (vcpkg 툴체인은 이 작업을 알아서 해 주지만, 프리빌트 OpenCV는 해 주지 않는다)
+  # ---------------------------------------------------------------------------
+  if(NOT CMAKE_VERSION VERSION_LESS 3.21)
+    foreach(_exe cfp_app cfp_cli)
+      if(TARGET ${_exe})
+        add_custom_command(TARGET ${_exe} POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                  "$<TARGET_RUNTIME_DLLS:${_exe}>" "$<TARGET_FILE_DIR:${_exe}>"
+          COMMAND_EXPAND_LISTS
+          COMMENT "런타임 DLL 복사 → $<TARGET_FILE_DIR:${_exe}>")
+      endif()
+    endforeach()
   endif()
 
   # MSVC: UTF-8 소스 인코딩 명시 (한글 문자열 리터럴이 깨지지 않도록)

@@ -47,14 +47,32 @@ winget install Git.Git Kitware.CMake Microsoft.VisualStudio.2022.BuildTools
 > 그래도 실패하면 저장소 자체를 `C:\dev\` 같은 ASCII 경로로 옮기고 다시 시도할 것.
 > 다른 위치를 쓰려면 `-VcpkgRoot D:\vcpkg` 처럼 지정한다.
 
+### OpenCV를 이미 받아둔 경우 (가장 빠름)
+
+공식 프리빌트(OpenCV 4.x / 5.x)를 풀어두었다면 vcpkg 빌드가 아예 필요 없다.
+스크립트가 `C:\opencv`를 자동 탐색하며, 다른 위치면 경로를 지정한다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build_windows.ps1 -OpenCVDir C:\opencv -Run
+```
+
 ### 수동
 
 ```powershell
-vcpkg install "opencv4[contrib,png,jpeg]:x64-windows"
-cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=<vcpkg>\scripts\buildsystems\vcpkg.cmake
+# (A) 프리빌트 사용
+cmake -S . -B build -A x64 -DOpenCV_DIR=C:\opencv\build
 cmake --build build --config Release
+
+# (B) vcpkg 사용
+vcpkg install --classic "opencv4[png,jpeg,fs,thread,intrinsics]:x64-windows"
+cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE=<vcpkg>\scripts\buildsystems\vcpkg.cmake -DVCPKG_MANIFEST_MODE=OFF
+cmake --build build --config Release
+
 .\build\Release\ContactlessFP.exe
 ```
+
+> OpenCV 프리빌트는 동적 라이브러리(`opencv_worldXXX.dll`)다.
+> CMake가 빌드 후 실행 파일 옆으로 자동 복사하므로 PATH를 건드릴 필요는 없다.
 
 ### 앱 사용법
 

@@ -12,6 +12,9 @@
 param(
     [switch]$Run,                       # 빌드 후 바로 실행
     [switch]$SkipTests,
+    # 미리 받아둔 OpenCV 프리빌트 경로. 지정하거나 C:\opencv 가 있으면
+    # vcpkg를 건너뛰고 그것을 쓴다(빌드 시간 0).
+    [string]$OpenCVDir = "",
     # [중요] 반드시 ASCII 전용 경로여야 한다.
     # vcpkg는 경로에 한글 등 비ASCII 문자가 있으면 내부 도구(ninja 등) 취득 단계에서
     # "no such file or directory"로 실패한다. 한국어 Windows의 기본 사용자 폴더
@@ -58,65 +61,99 @@ if (Test-Path $vswhere) {
 Step "경로 점검 (비ASCII 문자)"
 function Test-Ascii([string]$p) { return ($p -notmatch '[^\x00-\x7F]') }
 
-if (-not (Test-Ascii $VcpkgRoot)) {
-    Write-Warning "vcpkg 경로에 비ASCII 문자가 있습니다: $VcpkgRoot"
-    $VcpkgRoot = "C:\vcpkg"
-    Info "ASCII 경로로 대체합니다: $VcpkgRoot"
-}
 if (-not (Test-Ascii $root)) {
     Write-Warning ("프로젝트 경로에 한글이 포함되어 있습니다:`n  $root`n" +
         "  MSVC/CMake는 대개 문제없지만, 빌드가 계속 실패하면 " +
         "C:\dev\ 같은 ASCII 경로로 저장소를 옮겨 다시 시도하세요.")
 }
-Info "vcpkg 경로 : $VcpkgRoot"
 
-Step "vcpkg 준비"
-if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
-    if (-not (Test-Path $VcpkgRoot)) {
-        Info "vcpkg 클론 중... ($VcpkgRoot)"
-        try {
-            New-Item -ItemType Directory -Force -Path $VcpkgRoot | Out-Null
-        } catch {
-            throw ("$VcpkgRoot 를 만들 수 없습니다. 관리자 권한으로 한 번 실행하거나 " +
-                   "-VcpkgRoot D:\vcpkg 처럼 쓰기 가능한 ASCII 경로를 지정하세요.")
-        }
-        git clone --depth 1 https://github.com/microsoft/vcpkg.git $VcpkgRoot
-        if ($LASTEXITCODE -ne 0) { throw "vcpkg 클론 실패" }
-    }
-    & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
-    if ($LASTEXITCODE -ne 0) { throw "vcpkg 부트스트랩 실패" }
+# -----------------------------------------------------------------------------
+#  OpenCV 확보 전략
+#   1순위: 미리 받아둔 프리빌트 (-OpenCVDir 또는 C:\opencv)  → 빌드 불필요, 즉시
+#   2순위: vcpkg로 소스 빌드                                   → 5~15분
+# -----------------------------------------------------------------------------
+Step "OpenCV 탐색"
+
+function Find-OpenCVConfig([string]$base) {
+    if ([string]::IsNullOrWhiteSpace($base) -or -not (Test-Path $base)) { return $null }
+    # OpenCVConfig.cmake 가 있는 디렉터리를 찾는다. 공식 배포판은 <root>\build 에 둔다.
+    $hit = Get-ChildItem -Path $base -Filter "OpenCVConfig.cmake" -Recurse `
+             -ErrorAction SilentlyContinue -Depth 4 | Select-Object -First 1
+    if ($hit) { return $hit.Directory.FullName }
+    return $null
 }
-Info "vcpkg : $VcpkgRoot"
 
-Step "OpenCV 설치 (최초 1회 5~15분 소요)"
-# [왜 classic 모드인가]
-# manifest 모드는 설치 트리를 <repo>/vcpkg_installed/ 에 만든다. 저장소가
-# 한글 경로(C:\Users\이상진\...)에 있으면 그 경로가 vcpkg 내부 도구 취득 단계에서
-# 깨진다. classic 모드로 ASCII 경로(C:\vcpkg\installed)에 설치하면 이 문제를 피한다.
-# vcpkg.json은 의존성 문서로 남기고, CMake에는 VCPKG_MANIFEST_MODE=OFF를 넘긴다.
-$env:VCPKG_DOWNLOADS = Join-Path $VcpkgRoot "downloads"
-$env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+$cvDir = $null
+foreach ($cand in @($OpenCVDir, "C:\opencv", "C:\opencv\build")) {
+    if ([string]::IsNullOrWhiteSpace($cand)) { continue }
+    $found = Find-OpenCVConfig $cand
+    if ($found) { $cvDir = $found; break }
+}
 
-Push-Location $VcpkgRoot          # 매니페스트가 없는 위치에서 실행
-try {
-    # [최소 기능] 기본 기능(dnn/gapi/highgui/tiff/webp/quirc...)을 모두 끈다.
+$useVcpkg = $true
+if ($cvDir) {
+    $useVcpkg = $false
+    Ok "프리빌트 OpenCV 사용: $cvDir"
+    if (-not (Test-Ascii $cvDir)) {
+        Write-Warning "OpenCV 경로에 비ASCII 문자가 있습니다. 빌드가 실패하면 ASCII 경로로 옮기세요."
+    }
+} else {
+    Info "프리빌트 OpenCV를 찾지 못했습니다. vcpkg로 빌드합니다."
+    Info "(이미 받아두셨다면 -OpenCVDir C:\opencv 처럼 경로를 지정하세요)"
+}
+
+if ($useVcpkg) {
+    Step "vcpkg 준비"
+    if (-not (Test-Ascii $VcpkgRoot)) {
+        Write-Warning "vcpkg 경로에 비ASCII 문자가 있습니다: $VcpkgRoot"
+        $VcpkgRoot = "C:\vcpkg"
+        Info "ASCII 경로로 대체합니다: $VcpkgRoot"
+    }
+    if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
+        if (-not (Test-Path $VcpkgRoot)) {
+            Info "vcpkg 클론 중... ($VcpkgRoot)"
+            try {
+                New-Item -ItemType Directory -Force -Path $VcpkgRoot | Out-Null
+            } catch {
+                throw ("$VcpkgRoot 를 만들 수 없습니다. 관리자 권한으로 한 번 실행하거나 " +
+                       "-VcpkgRoot D:\vcpkg 처럼 쓰기 가능한 ASCII 경로를 지정하세요.")
+            }
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git $VcpkgRoot
+            if ($LASTEXITCODE -ne 0) { throw "vcpkg 클론 실패" }
+        }
+        & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+        if ($LASTEXITCODE -ne 0) { throw "vcpkg 부트스트랩 실패" }
+    }
+    Info "vcpkg : $VcpkgRoot"
+
+    Step "OpenCV 설치 (최초 1회 5~15분 소요)"
+    # [최소 기능] 기본 기능(dnn/gapi/highgui/tiff/webp/quirc/directml...)을 모두 끈다.
     # dnn -> protobuf -> abseil 연쇄가 빌드 실패의 원인이었고, 우리는 dnn을 쓰지 않는다.
-    # core/imgproc/imgcodecs만 있으면 되며 png/jpeg는 libpng/libjpeg-turbo만 추가한다.
-    # 빌드 시간이 30~40분에서 5~10분 수준으로 줄어든다.
-    & (Join-Path $VcpkgRoot "vcpkg.exe") install --classic `
-        "opencv4[png,jpeg,fs,thread,intrinsics]:x64-windows"
-    if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패 (vcpkg install)" }
-} finally {
-    Pop-Location
+    $env:VCPKG_DOWNLOADS = Join-Path $VcpkgRoot "downloads"
+    $env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+    Push-Location $VcpkgRoot          # 매니페스트가 없는 위치에서 실행
+    try {
+        & (Join-Path $VcpkgRoot "vcpkg.exe") install --classic `
+            "opencv4[png,jpeg,fs,thread,intrinsics]:x64-windows"
+        if ($LASTEXITCODE -ne 0) { throw "OpenCV 설치 실패 (vcpkg install)" }
+    } finally {
+        Pop-Location
+    }
 }
 
 Step "CMake 구성"
-$toolchain = Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"
-$buildDir  = Join-Path $root "build"
-cmake -S $root -B $buildDir -A x64 `
-      -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
-      -DVCPKG_TARGET_TRIPLET=x64-windows `
-      -DVCPKG_MANIFEST_MODE=OFF
+$buildDir = Join-Path $root "build"
+$cmArgs = @("-S", $root, "-B", $buildDir, "-A", "x64")
+if ($useVcpkg) {
+    $toolchain = Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"
+    $cmArgs += @("-DCMAKE_TOOLCHAIN_FILE=$toolchain",
+                 "-DVCPKG_TARGET_TRIPLET=x64-windows",
+                 "-DVCPKG_MANIFEST_MODE=OFF")
+} else {
+    $cmArgs += @("-DOpenCV_DIR=$cvDir")
+}
+Info ("cmake " + ($cmArgs -join " "))
+cmake @cmArgs
 if ($LASTEXITCODE -ne 0) { throw "CMake 구성 실패" }
 
 Step "빌드"
