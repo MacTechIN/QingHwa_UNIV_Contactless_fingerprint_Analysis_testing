@@ -23,6 +23,11 @@ struct MatcherConfig {
     double inlier_angle_tol   = 0.52;   // 방향 일치 허용오차 (rad, ~30deg)
     std::size_t max_hypotheses = 64;    // 검증할 상위 후보쌍 개수 (연산량 상한)
     int    min_inliers        = 6;      // 이 미만이면 스코어 0으로 절단
+    // 스코어 정규화에 쓰는 템플릿 크기의 하한.
+    // 미뉴셔가 극단적으로 적은 저품질 템플릿은 분모가 작아져 부당하게 높은 점수를
+    // 받는다(실측: 미뉴셔 14개짜리 타인쌍이 30개짜리 본인쌍보다 높은 점수).
+    // 실제 크기 대신 max(n, min_template_size)를 써서 그 이득을 없앤다.
+    int    min_template_size  = 40;
 };
 
 struct MatchResult {

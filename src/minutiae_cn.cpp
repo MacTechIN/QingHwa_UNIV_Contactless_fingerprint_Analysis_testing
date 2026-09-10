@@ -164,14 +164,31 @@ std::vector<Minutia> CrossingNumberExtractor::extract(const EnhanceResult& enh) 
             m.theta = static_cast<float>(theta < 0 ? theta + 2 * kPi : theta);
             m.type = (cn == 1) ? MinutiaType::RidgeEnding : MinutiaType::Bifurcation;
 
-            // 품질 = 국소 융선 선명도 대용치. Gabor 응답 절대값의 국소 평균을 쓴다.
-            if (!enh.enhanced.empty()) {
+            // --- 품질 = 국소 방향장 일관성 ---
+            //
+            // [핵심 로직 해설] 예전에는 Gabor 응답의 밝기 평균을 품질로 썼다.
+            // 밝기는 "여기 무언가 있다"는 것만 말해줄 뿐, 그것이 융선인지
+            // 음영 경계인지 구분하지 못한다. 그래서 위양성 미뉴셔가 상위 품질로
+            // 올라와 템플릿을 오염시켰다(실제 촬영본에서 미뉴셔 120개 중 절반가량).
+            //
+            // 일관성(coherence)은 "융선이 국소적으로 나란한가"를 직접 재므로
+            // 미뉴셔 신뢰도의 대용치로 훨씬 정확하다. 낮은 곳의 미뉴셔는
+            // 대개 잡음이 만든 것이라 재촬영 시 재현되지 않는다.
+            if (!enh.coherence.empty()) {
+                cv::Rect w(x - 5, y - 5, 11, 11);
+                w &= cv::Rect(0, 0, enh.coherence.cols, enh.coherence.rows);
+                m.quality = w.area() > 0
+                    ? static_cast<float>(cv::mean(enh.coherence(w))[0])
+                    : 0.0f;
+            } else if (!enh.enhanced.empty()) {
                 cv::Rect w(x - 4, y - 4, 9, 9);
                 w &= cv::Rect(0, 0, enh.enhanced.cols, enh.enhanced.rows);
                 m.quality = w.area() > 0
                     ? static_cast<float>(cv::mean(enh.enhanced(w))[0] / 255.0)
                     : 0.0f;
             }
+            // 일관성이 낮은 곳의 미뉴셔는 재현되지 않으므로 애초에 버린다.
+            if (!enh.coherence.empty() && m.quality < cfg_.min_quality) continue;
             cand.push_back(m);
         }
     }

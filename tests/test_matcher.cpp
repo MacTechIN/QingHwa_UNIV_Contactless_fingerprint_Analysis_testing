@@ -70,9 +70,15 @@ int main() {
 
     // --- 타인 ---
     {
+        // [주의] 절대 임계값으로 단정하지 않는다. 스코어 정규화 식을 바꾸면
+        // (예: 제곱 형태 -> 제곱근 형태) 눈금만 달라져도 이런 테스트가 깨진다.
+        // 실제로 중요한 것은 "본인쌍보다 충분히 낮은가"라는 스케일 불변 성질이다.
         const Template c = make_template(45, 777);
-        auto r = matcher.match(a, c);
-        tu::check(r.score < 0.15, "무관한 템플릿 스코어 < 0.15");
+        const Template b = transform(a, 10.0, 5.0, 3.0, 1.0, 42);
+        const double gen = matcher.match(a, b).score;
+        const double imp = matcher.match(a, c).score;
+        std::printf("       genuine=%.4f  impostor=%.4f\n", gen, imp);
+        tu::check(imp < gen * 0.5, "타인쌍 스코어가 본인쌍의 절반 미만");
     }
 
     // --- 본인 > 타인 분리 (여러 시드) ---

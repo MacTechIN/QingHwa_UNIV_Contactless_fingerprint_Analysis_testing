@@ -2,6 +2,9 @@
 
 #include "cfp/cv_compat.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace cfp {
 
 // =============================================================================
@@ -125,28 +128,38 @@ SegmentResult YCbCrSegmenter::segment(const cv::Mat& bgr) const {
     cv::warpAffine(gray,  rotated,      rot, gray.size(), cv::INTER_CUBIC, cv::BORDER_REPLICATE);
     cv::warpAffine(clean, rotated_mask, rot, gray.size(), cv::INTER_NEAREST);
 
-    // --- 6) 지두(fingertip) 크롭 ---
-    // 회전 후 손가락은 세로로 서 있다. 위쪽 tip_fraction 만큼이 손가락 끝.
+    // --- 6) 지두(pad) 크롭 — 종횡비 보존 ---
+    //
+    // 회전 후 손가락은 세로로 서 있고 위쪽이 손끝이다.
+    // 손끝 바로 끝은 곡률이 심해 융선이 급격히 휘고 조명도 떨어지므로
+    // tip_margin 만큼 건너뛴 뒤, 폭 기준으로 pad_aspect 비율만큼만 잘라낸다.
     const float w = rr.size.width, h = rr.size.height;
-    const float tip_h = h * static_cast<float>(cfg_.tip_fraction);
-    cv::Rect roi(static_cast<int>(rr.center.x - w * 0.5f),
-                 static_cast<int>(rr.center.y - h * 0.5f),
-                 static_cast<int>(w),
-                 static_cast<int>(tip_h));
+    const float top = rr.center.y - h * 0.5f;
+    const float y0  = top + w * static_cast<float>(cfg_.tip_margin);
+    const float ph  = w * static_cast<float>(cfg_.pad_aspect);
+
+    cv::Rect roi(static_cast<int>(std::lround(rr.center.x - w * 0.5f)),
+                 static_cast<int>(std::lround(y0)),
+                 static_cast<int>(std::lround(w)),
+                 static_cast<int>(std::lround(ph)));
     roi &= cv::Rect(0, 0, rotated.cols, rotated.rows);   // 영상 밖 클리핑
-    if (roi.width < 16 || roi.height < 16) {
+    if (roi.width < 24 || roi.height < 24) {
         out.reason = "roi degenerate";
         return out;
     }
 
+    // 출력 크기도 크롭 종횡비를 그대로 따른다(왜곡 없음).
+    const int ow = std::max(64, cfg_.out_w);
+    const int oh = std::max(64, static_cast<int>(std::lround(
+                       ow * static_cast<double>(roi.height) / roi.width)));
+
     cv::Mat tip = rotated(roi).clone();
-    cv::resize(tip, out.roi_gray, cv::Size(cfg_.out_w, cfg_.out_h), 0, 0, cv::INTER_CUBIC);
+    cv::resize(tip, out.roi_gray, cv::Size(ow, oh), 0, 0, cv::INTER_CUBIC);
 
     // 마스크도 완전히 동일한 기하 변환을 거쳐야 픽셀이 일대일로 대응된다.
     // 보간은 NEAREST를 써야 이진성이 유지된다(CUBIC은 경계에 중간값을 만든다).
     cv::Mat tip_mask = rotated_mask(roi).clone();
-    cv::resize(tip_mask, out.roi_mask, cv::Size(cfg_.out_w, cfg_.out_h), 0, 0,
-               cv::INTER_NEAREST);
+    cv::resize(tip_mask, out.roi_mask, cv::Size(ow, oh), 0, 0, cv::INTER_NEAREST);
 
     out.ok = true;
     return out;

@@ -58,6 +58,10 @@ struct EnhanceResult {
     cv::Mat orientation;   // 32FC1 픽셀별 융선 방향 (rad, [0,pi))
     cv::Mat frequency;     // 32FC1 픽셀별 융선 주파수 (cycles/px)
     cv::Mat mask;          // 8UC1 유효 융선 영역
+    // 32FC1 방향장 일관성 0..1. 미뉴셔 신뢰도 판정에 쓴다.
+    // 1에 가까우면 융선이 국소적으로 완전히 나란하다는 뜻이고,
+    // 낮은 곳에서 나온 미뉴셔는 대개 잡음/음영 경계가 만든 위양성이다.
+    cv::Mat coherence;
     cv::Mat enhanced;      // 8UC1 Gabor 통과 결과
     cv::Mat binary;        // 8UC1 0/255 이진 융선
     cv::Mat skeleton;      // 8UC1 0/255 1픽셀 세선화

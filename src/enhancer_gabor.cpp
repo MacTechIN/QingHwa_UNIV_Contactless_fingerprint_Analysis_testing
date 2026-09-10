@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <algorithm>
 #include <map>
 #include <vector>
 
@@ -41,16 +42,79 @@ cv::Mat GaborRidgeEnhancer::normalize(const cv::Mat& gray) const {
 
     if (cfg_.invert_polarity) cv::bitwise_not(g8, g8);   // 융선이 항상 "밝게"
 
-    auto clahe = cv::createCLAHE(cfg_.clahe_clip, {cfg_.clahe_tile, cfg_.clahe_tile});
-    cv::Mat eq;
-    clahe->apply(g8, eq);
-
     cv::Mat f;
-    eq.convertTo(f, CV_32F);
-    cv::Scalar mu, sd;
-    cv::meanStdDev(f, mu, sd);
-    const double s = (sd[0] > 1e-6) ? sd[0] : 1.0;
-    return (f - mu[0]) / s;
+    g8.convertTo(f, CV_32F);
+
+    // --- 1단계: 밴드패스로 음영(shading) 제거 ---
+    //
+    // [핵심 로직 해설 — 왜 CLAHE가 아니라 밴드패스인가]
+    // 손가락은 곡면이라 가장자리로 갈수록 어두워지는 완만한 음영이 항상 있다.
+    // 이 음영은 융선보다 훨씬 큰 스케일의 저주파 성분인데, CLAHE는 국소 히스토그램을
+    // 늘릴 뿐 이 성분을 제거하지 못한다. 그 결과 Gabor가 융선 대신 음영의 등고선을
+    // 잡아 매끈한 동심원 곡선을 만들어낸다(실제 촬영본에서 관측된 증상).
+    //
+    // 융선 주기의 약 2배 이상으로 흐린 영상을 빼면 그 저주파가 사라지고
+    // 융선 대역만 남는다. sigma를 목표 주기에 묶어 두는 것이 요점이다.
+    const double sigma_lo = std::max(2.0, cfg_.target_period * 1.2);
+    cv::Mat low;
+    cv::GaussianBlur(f, low, {0, 0}, sigma_lo);
+    cv::Mat bp = f - low;
+
+    // --- 2단계: 국소 에너지로 나눠 대비를 균일화 ---
+    //
+    // 전역 표준편차로 나누면 밝은 중앙부만 살고 어두운 가장자리 융선은 죽는다.
+    // 국소 RMS로 나누면 어느 위치든 융선 진폭이 1 근처로 맞춰져,
+    // 이후 이진화 임계(0)와 마스크 임계가 영상 전체에서 같은 의미를 갖는다.
+    const double sigma_e = std::max(3.0, cfg_.target_period * 2.0);
+    cv::Mat energy;
+    cv::multiply(bp, bp, energy);
+    cv::GaussianBlur(energy, energy, {0, 0}, sigma_e);
+    cv::sqrt(energy, energy);
+
+    cv::Mat norm;
+    cv::divide(bp, energy + 1e-3, norm);
+    return norm;
+}
+
+// =============================================================================
+//  스케일 정규화 — 융선 주기를 target_period에 맞추는 배율 추정
+//
+//  [핵심 로직 해설]
+//  같은 손가락도 촬영거리에 따라 융선 주기가 4px일 수도 20px일 수도 있다.
+//  Gabor 커널은 주기에 맞춰 만들지만, 주기가 극단으로 가면
+//   - 너무 작으면(<5px) 표본화 한계에 걸려 융선이 뭉개지고
+//   - 너무 크면(>15px) 커널이 커져 느려지고 국소성이 떨어진다.
+//  그래서 아예 영상을 리샘플해 주기를 항상 target_period 근처로 만든다.
+//  부수 효과가 더 중요하다 — 두 촬영본의 배율이 자동으로 정렬되므로
+//  미뉴셔 좌표가 배율 불변이 되어 매칭이 안정된다.
+//
+//  주기 추정은 전체 영상의 자기상관(autocorrelation) 대신,
+//  이미 있는 방향장+x-signature 경로를 축소본에 한 번 돌려 중앙값을 취한다.
+//  전체를 다시 계산하지 않으므로 비용이 작다.
+// =============================================================================
+double GaborRidgeEnhancer::estimate_scale(const cv::Mat& gray) const {
+    if (!cfg_.normalize_scale || gray.empty()) return 1.0;
+
+    const cv::Mat n = normalize(gray);
+    const cv::Mat o = orientation_field(n);
+    const cv::Mat fr = frequency_field(n, o);
+
+    std::vector<float> periods;
+    periods.reserve(static_cast<std::size_t>(fr.total() / 64 + 1));
+    for (int y = 0; y < fr.rows; y += 4)
+        for (int x = 0; x < fr.cols; x += 4) {
+            const float v = fr.at<float>(y, x);
+            if (v > 1e-6f) periods.push_back(1.0f / v);
+        }
+    if (periods.size() < 16) return 1.0;              // 표본 부족 → 리샘플 포기
+
+    std::nth_element(periods.begin(), periods.begin() + periods.size() / 2,
+                     periods.end());
+    const double median_period = periods[periods.size() / 2];
+    if (median_period < 1.0) return 1.0;
+
+    const double scale = cfg_.target_period / median_period;
+    return std::clamp(scale, cfg_.min_scale, cfg_.max_scale);
 }
 
 // =============================================================================
@@ -204,16 +268,53 @@ cv::Mat GaborRidgeEnhancer::frequency_field(const cv::Mat& norm,
 //  E[x^2] - (E[x])^2 를 boxFilter 두 번으로 계산한다.
 // =============================================================================
 cv::Mat GaborRidgeEnhancer::region_mask(const cv::Mat& norm) const {
+    cv::Mat unused;
+    return region_mask(norm, unused);
+}
+
+cv::Mat GaborRidgeEnhancer::region_mask(const cv::Mat& norm,
+                                        cv::Mat& coherence_out) const {
     const cv::Size b(cfg_.block, cfg_.block);
+
+    // --- (a) 국소 분산: 구조가 아예 없는 곳을 배제 ---
     cv::Mat mean, sq, mean_sq;
     cv::boxFilter(norm, mean, CV_32F, b);
     cv::multiply(norm, norm, sq);
     cv::boxFilter(sq, mean_sq, CV_32F, b);
     cv::Mat var = mean_sq - mean.mul(mean);
+    cv::Mat m_var;
+    cv::threshold(var, m_var, cfg_.mask_var_thresh, 255, cv::THRESH_BINARY);
+    m_var.convertTo(m_var, CV_8UC1);
+
+    // --- (b) 방향장 일관성(coherence): 방향이 없는 구조를 배제 ---
+    //
+    // [핵심 로직 해설] 분산만 보면 음영 경계, 손톱, 배경 질감처럼
+    // "밝기는 변하지만 융선이 아닌" 영역이 전부 통과한다.
+    // 융선의 결정적 특징은 국소적으로 한 방향으로 나란하다는 것이다.
+    // 구조텐서의 배각 벡터 (Vy, Vx)를 블록 평균한 크기를 에너지로 나누면
+    //   coherence = |평균 배각 벡터| / 평균 에너지  (0..1)
+    // 이 값이 1에 가까우면 완전 평행, 0에 가까우면 방향이 없다.
+    // 벡터 평균이 배각 공간에서 이루어지므로 방향의 pi 주기성도 자동 처리된다.
+    cv::Mat gx, gy;
+    cv::Sobel(norm, gx, CV_32F, 1, 0, 3);
+    cv::Sobel(norm, gy, CV_32F, 0, 1, 3);
+    cv::Mat vx = 2.0 * gx.mul(gy);
+    cv::Mat vy = gx.mul(gx) - gy.mul(gy);
+    cv::Mat en = gx.mul(gx) + gy.mul(gy);
+    cv::boxFilter(vx, vx, CV_32F, b);
+    cv::boxFilter(vy, vy, CV_32F, b);
+    cv::boxFilter(en, en, CV_32F, b);
+    cv::Mat mag;
+    cv::magnitude(vx, vy, mag);
+    cv::Mat coh;
+    cv::divide(mag, en + 1e-6, coh);
+    coherence_out = coh.clone();
+    cv::Mat m_coh;
+    cv::threshold(coh, m_coh, cfg_.mask_coherence, 255, cv::THRESH_BINARY);
+    m_coh.convertTo(m_coh, CV_8UC1);
 
     cv::Mat mask;
-    cv::threshold(var, mask, cfg_.mask_var_thresh, 255, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_8UC1);
+    cv::bitwise_and(m_var, m_coh, mask);
 
     // 구멍 메우기 + 가장자리 정리
     const cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, {9, 9});
@@ -324,19 +425,33 @@ EnhanceResult GaborRidgeEnhancer::enhance(const cv::Mat& roi_gray,
     EnhanceResult r;
     if (roi_gray.empty()) return r;
 
-    r.normalized  = normalize(roi_gray);
+    // --- 스케일 정규화: 융선 주기를 target_period에 맞춘다 ---
+    // 이후 모든 단계(방향장/주파수/Gabor/세선화/미뉴셔)가 이 정규화된 좌표계에서
+    // 동작한다. 두 촬영본이 배율이 달라도 같은 좌표계로 수렴하므로 매칭이 안정된다.
+    cv::Mat src = roi_gray, src_mask = roi_mask;
+    const double scale = estimate_scale(roi_gray);
+    if (std::fabs(scale - 1.0) > 0.05) {
+        const int nw = std::max(32, static_cast<int>(std::lround(roi_gray.cols * scale)));
+        const int nh = std::max(32, static_cast<int>(std::lround(roi_gray.rows * scale)));
+        const int interp = (scale < 1.0) ? cv::INTER_AREA : cv::INTER_CUBIC;
+        cv::resize(roi_gray, src, {nw, nh}, 0, 0, interp);
+        if (!roi_mask.empty())
+            cv::resize(roi_mask, src_mask, {nw, nh}, 0, 0, cv::INTER_NEAREST);
+    }
+
+    r.normalized  = normalize(src);
     r.orientation = orientation_field(r.normalized);
-    r.mask        = region_mask(r.normalized);
+    r.mask        = region_mask(r.normalized, r.coherence);
 
     // 세그멘테이션이 넘겨준 손가락 마스크와 교집합을 취한다.
     // 국소분산만으로 만든 마스크는 배경 질감(벽, 그림자 경계)도 통과시키므로,
     // "손가락 안쪽"이라는 상위 단계의 지식이 반드시 필요하다.
     // 실제 스마트폰 촬영 사진 테스트에서 배경이 유효영역으로 새어 들어가
     // 위양성 미뉴셔가 생기는 것을 확인하고 추가한 처리다.
-    if (!roi_mask.empty() && roi_mask.size() == r.mask.size()) {
+    if (!src_mask.empty() && src_mask.size() == r.mask.size()) {
         cv::Mat prior;
         // 경계 근처는 조명 감쇠로 융선이 뭉개지므로 안쪽으로 한 번 더 깎는다.
-        cv::erode(roi_mask, prior,
+        cv::erode(src_mask, prior,
                   cv::getStructuringElement(cv::MORPH_ELLIPSE, {13, 13}));
         cv::bitwise_and(r.mask, prior, r.mask);
     }

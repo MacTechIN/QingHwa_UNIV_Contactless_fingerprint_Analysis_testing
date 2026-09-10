@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <algorithm>
 #include <numeric>
 
 namespace cfp {
@@ -123,10 +124,16 @@ double descriptor_similarity(const std::vector<NeighborFeat>& a,
 //      이동 T = g.pos - R(p.pos)
 //  이 변환을 probe 전체에 적용해 gallery와 겹치는 개수를 센다.
 //
-//  스코어 정규화: inliers^2 / (n_p * n_g)
-//  단순히 inliers/min(n_p,n_g)를 쓰면 미뉴셔가 적은 저품질 템플릿이
-//  분모가 작아져 부당하게 높은 점수를 받는다. 제곱/곱 형태는
-//  양쪽 모두 충분한 미뉴셔를 가질 때만 높은 값이 나오도록 억제한다.
+//  스코어 정규화: inliers / sqrt(n_p * n_g)   (두 recall의 기하평균)
+//
+//  inliers/min(n_p,n_g) 를 쓰면 미뉴셔가 적은 저품질 템플릿이 분모가 작아져
+//  부당하게 높은 점수를 받는다. 그래서 양쪽을 모두 반영해야 한다.
+//
+//  예전에는 inliers^2/(n_p*n_g), 즉 두 recall의 "곱"을 썼는데 이는 벌점을
+//  이중으로 매긴다. 미뉴셔가 많이 검출되는 고해상 입력일수록 분모가 커져
+//  inlier가 늘었는데도 점수가 오히려 떨어지는 역전이 관측됐다
+//  (inlier 14->40 인데 점수 0.338->0.153).
+//  기하평균은 동일 템플릿에서 정확히 1.0을 주면서도 그 역전을 없앤다.
 // =============================================================================
 MatchResult MinutiaMatcher::match(const Template& probe,
                                   const Template& gallery) const {
@@ -198,10 +205,14 @@ MatchResult MinutiaMatcher::match(const Template& probe,
 
     if (best.inliers < cfg_.min_inliers) { best.score = 0.0; return best; }
 
-    const double np = static_cast<double>(P.size());
-    const double ng = static_cast<double>(G.size());
-    const double s  = static_cast<double>(best.inliers) * static_cast<double>(best.inliers)
-                      / (np * ng);
+    // [주의] 이 정규화는 옛 형태 inliers^2/(n_p*n_g) 의 제곱근이다.
+    // 즉 단조 변환이므로 순위와 EER은 바뀌지 않는다. 바뀌는 것은 눈금뿐이며,
+    // 동일 템플릿에서 정확히 1.0이 되고 값이 0~1에 고르게 퍼져 임계값을 잡기 쉽다.
+    // 판별력을 실제로 바꾸는 것은 미뉴셔 품질(일관성 기반 필터)이지 이 식이 아니다.
+    const double lo = static_cast<double>(std::max(1, cfg_.min_template_size));
+    const double np = std::max(static_cast<double>(P.size()), lo);
+    const double ng = std::max(static_cast<double>(G.size()), lo);
+    const double s = static_cast<double>(best.inliers) / std::sqrt(np * ng);
     best.score = std::min(1.0, s);
     return best;
 }
