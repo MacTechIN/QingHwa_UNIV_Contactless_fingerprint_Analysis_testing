@@ -46,9 +46,9 @@ int main() {
     MinutiaMatcher matcher;
 
     // --- 각도 정규화 ---
-    tu::near(wrap_pi(3 * kPi), kPi, 1e-9, "wrap_pi(3pi) == pi");
-    tu::near(wrap_pi(-3 * kPi / 2), kPi / 2, 1e-9, "wrap_pi(-3pi/2) == pi/2");
-    tu::near(std::fabs(wrap_half_pi(kPi - 0.01)), 0.01, 1e-9,
+    tu::close_to(wrap_pi(3 * kPi), kPi, 1e-9, "wrap_pi(3pi) == pi");
+    tu::close_to(wrap_pi(-3 * kPi / 2), kPi / 2, 1e-9, "wrap_pi(-3pi/2) == pi/2");
+    tu::close_to(std::fabs(wrap_half_pi(kPi - 0.01)), 0.01, 1e-9,
              "wrap_half_pi: 179도와 0도는 사실상 같은 융선 방향");
 
     const Template a = make_template(45, 1);
@@ -65,7 +65,7 @@ int main() {
         const Template b = transform(a, 18.0, 12.0, -7.0, 1.2, 99);
         auto r = matcher.match(a, b);
         tu::check(r.score > 0.5, "18도 회전 + 이동 후에도 스코어 > 0.5");
-        tu::near(r.rotation * 180.0 / kPi, 18.0, 6.0, "추정 회전각 ~= 18도");
+        tu::close_to(r.rotation * 180.0 / kPi, 18.0, 6.0, "추정 회전각 ~= 18도");
     }
 
     // --- 타인 ---
@@ -91,7 +91,7 @@ int main() {
     // --- 빈 템플릿 방어 ---
     {
         Template empty;
-        tu::near(matcher.match(a, empty).score, 0.0, 1e-12, "빈 템플릿 → 스코어 0");
+        tu::close_to(matcher.match(a, empty).score, 0.0, 1e-12, "빈 템플릿 → 스코어 0");
     }
     return tu::summary("matcher");
 }

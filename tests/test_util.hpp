@@ -14,7 +14,10 @@ inline void check(bool cond, const std::string& what) {
     if (!cond) { ++g_fail; std::printf("  [FAIL] %s\n", what.c_str()); }
     else       { std::printf("  [ ok ] %s\n", what.c_str()); }
 }
-inline void near(double a, double b, double tol, const std::string& what) {
+// [주의] 이름을 near로 두면 안 된다. Windows의 minwindef.h가 16비트 메모리 모델
+// 시절 잔재로 near/far를 빈 매크로로 정의하기 때문에, windows.h를 포함하는
+// 번역 단위에서 tu::near가 통째로 사라져 기괴한 구문 오류가 난다.
+inline void close_to(double a, double b, double tol, const std::string& what) {
     ++g_total;
     if (std::fabs(a - b) > tol) {
         ++g_fail;

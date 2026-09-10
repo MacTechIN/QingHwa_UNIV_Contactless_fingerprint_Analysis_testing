@@ -13,8 +13,8 @@ int main() {
         std::vector<double> gen, imp;
         for (int i = 0; i < 100; ++i) { gen.push_back(0.8 + i * 0.001); imp.push_back(0.1 + i * 0.001); }
         auto r = compute_eer(gen, imp);
-        tu::near(r.eer, 0.0, 1e-9, "완전분리 EER == 0");
-        tu::near(roc_auc(gen, imp), 1.0, 1e-9, "완전분리 AUC == 1");
+        tu::close_to(r.eer, 0.0, 1e-9, "완전분리 EER == 0");
+        tu::close_to(roc_auc(gen, imp), 1.0, 1e-9, "완전분리 AUC == 1");
     }
 
     // --- 2) 완전 동일 분포 → EER 0.5, AUC 0.5 ---
@@ -22,8 +22,8 @@ int main() {
         std::vector<double> gen, imp;
         for (int i = 0; i < 200; ++i) { gen.push_back(i * 0.01); imp.push_back(i * 0.01); }
         auto r = compute_eer(gen, imp);
-        tu::near(r.eer, 0.5, 0.02, "동일분포 EER ~= 0.5");
-        tu::near(roc_auc(gen, imp), 0.5, 1e-9, "동일분포 AUC == 0.5 (동점 평균순위)");
+        tu::close_to(r.eer, 0.5, 0.02, "동일분포 EER ~= 0.5");
+        tu::close_to(roc_auc(gen, imp), 0.5, 1e-9, "동일분포 AUC == 0.5 (동점 평균순위)");
     }
 
     // --- 3) 대칭 부분중첩 → 해석적 기대값과 비교 ---
@@ -36,8 +36,8 @@ int main() {
             imp.push_back(0.0 + 0.6 * i / (N - 1.0));
         }
         auto r = compute_eer(gen, imp);
-        tu::near(r.eer, 1.0 / 6.0, 0.005, "대칭중첩 EER == 1/6");
-        tu::near(r.threshold, 0.5, 0.01, "EER 임계값 == 0.5");
+        tu::close_to(r.eer, 1.0 / 6.0, 0.005, "대칭중첩 EER == 1/6");
+        tu::close_to(r.threshold, 0.5, 0.01, "EER 임계값 == 0.5");
     }
 
     // --- 4) 운영점 지표 단조성 ---
@@ -65,8 +65,8 @@ int main() {
         };
         std::vector<std::size_t> truth = {0, 1, 2};
         auto cmc = compute_cmc(S, truth);
-        tu::near(cmc[0], 2.0 / 3.0, 1e-9, "rank-1 == 2/3");
-        tu::near(cmc[1], 1.0,       1e-9, "rank-2 == 1.0");
+        tu::close_to(cmc[0], 2.0 / 3.0, 1e-9, "rank-1 == 2/3");
+        tu::close_to(cmc[1], 1.0,       1e-9, "rank-2 == 1.0");
     }
 
     // --- 6) 퇴화 매처 방어: 모든 스코어 동일 ---
