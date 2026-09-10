@@ -15,6 +15,20 @@ endif()
 # Zhang-Suen은 src/thinning.cpp에 직접 구현했고 OpenCV 구현과 대조 검증했다.
 # 버전을 못박지 않는다. OpenCV 4.x 프리빌트/vcpkg 빌드와 5.x 프리빌트를 모두 받는다.
 # 사용하는 API가 core/imgproc/imgcodecs의 안정 표면뿐이라 4.5~5.x에서 동일하게 동작한다.
+# -----------------------------------------------------------------------------
+# [필수] MSVC에 소스가 UTF-8임을 알린다.
+#
+# 이 옵션이 없으면 MSVC는 소스를 시스템 코드페이지(한국어 Windows는 CP949)로 읽는다.
+# 우리 소스의 한글 주석이 깨지고, 깨진 바이트가 뒤따르는 코드를 삼켜
+# "cfp::cfp::cv::Mat 재정의" 같은 전혀 무관해 보이는 오류가 연쇄적으로 터진다.
+#
+# [주의] 예전에는 타깃마다 target_compile_options로 붙였는데 테스트 타깃 3개를
+# 빠뜨렸고, 정확히 그 3개만 깨졌다. 전역 옵션으로 두어 새 타깃을 추가해도
+# 자동으로 적용되게 한다.
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 message(STATUS "OpenCV ${OpenCV_VERSION}  (${OpenCV_DIR})")
 
@@ -117,14 +131,6 @@ if(WIN32)
     endforeach()
   endif()
 
-  # MSVC: UTF-8 소스 인코딩 명시 (한글 문자열 리터럴이 깨지지 않도록)
-  if(MSVC)
-    target_compile_options(cfp_app     PRIVATE /utf-8)
-    target_compile_options(cfp_capture PRIVATE /utf-8)
-    target_compile_options(cfp_imaging PRIVATE /utf-8)
-    target_compile_options(cfp_core    PRIVATE /utf-8)
-    target_compile_options(cfp_cli     PRIVATE /utf-8)
-  endif()
 endif()
 
 # -----------------------------------------------------------------------------
@@ -150,19 +156,45 @@ endif()
 add_test(NAME pipeline COMMAND test_pipeline)
 
 # -----------------------------------------------------------------------------
-# 개발 환경 보정 (Linux/CI 전용)
-#   conda-forge로 설치한 OpenCV는 시스템 GCC보다 새 libstdc++로 빌드되어 있어
-#   시스템 링커가 CXXABI 심볼을 못 찾는 경우가 있다.
-#   OpenCV가 있는 prefix의 런타임을 우선 링크하도록 rpath를 지정해 해결한다.
+# 개발 환경 보정 (Linux 전용)
+#
+#   conda/micromamba로 설치한 OpenCV는 시스템 GCC보다 새 libstdc++로 빌드되어 있어
+#   시스템 링커가 CXXABI 심볼(__cxa_call_terminate@CXXABI_1.3.15 등)을 찾지 못한다.
+#   OpenCV가 설치된 prefix의 lib를 링크 경로와 rpath에 넣어 해결한다.
+#
+#   [주의] 예전에는 CMAKE_PREFIX_PATH가 정의된 경우에만 동작했다. 그래서
+#   -DOpenCV_DIR=... 로만 구성하면 보정이 걸리지 않아 링크가 깨졌다.
+#   이제 OpenCV_INSTALL_PATH(OpenCVConfig.cmake가 설정)를 우선 사용하고,
+#   없으면 OpenCV_DIR에서 거슬러 올라가 추론한다.
 #   Windows/vcpkg 빌드에는 영향이 없다.
 # -----------------------------------------------------------------------------
-if(UNIX AND NOT APPLE AND DEFINED CMAKE_PREFIX_PATH)
-  foreach(_t cfp_imaging cfp_cli test_pipeline)
-    if(TARGET ${_t})
-      target_link_directories(${_t} PUBLIC ${CMAKE_PREFIX_PATH}/lib)
-      set_target_properties(${_t} PROPERTIES
-        BUILD_RPATH   "${CMAKE_PREFIX_PATH}/lib"
-        INSTALL_RPATH "${CMAKE_PREFIX_PATH}/lib")
+if(UNIX AND NOT APPLE)
+  set(_cfp_extra_libdirs "")
+  if(DEFINED OpenCV_INSTALL_PATH AND EXISTS "${OpenCV_INSTALL_PATH}/lib")
+    list(APPEND _cfp_extra_libdirs "${OpenCV_INSTALL_PATH}/lib")
+  endif()
+  if(DEFINED CMAKE_PREFIX_PATH AND EXISTS "${CMAKE_PREFIX_PATH}/lib")
+    list(APPEND _cfp_extra_libdirs "${CMAKE_PREFIX_PATH}/lib")
+  endif()
+  if(NOT _cfp_extra_libdirs AND DEFINED OpenCV_DIR)
+    # 예: <prefix>/lib/cmake/opencv4 -> <prefix>/lib
+    get_filename_component(_p "${OpenCV_DIR}" DIRECTORY)   # .../lib/cmake
+    get_filename_component(_p "${_p}" DIRECTORY)           # .../lib
+    if(EXISTS "${_p}" AND IS_DIRECTORY "${_p}")
+      list(APPEND _cfp_extra_libdirs "${_p}")
     endif()
-  endforeach()
+  endif()
+  list(REMOVE_DUPLICATES _cfp_extra_libdirs)
+
+  if(_cfp_extra_libdirs)
+    message(STATUS "런타임 라이브러리 경로 보정: ${_cfp_extra_libdirs}")
+    foreach(_t cfp_imaging cfp_cli test_pipeline)
+      if(TARGET ${_t})
+        target_link_directories(${_t} PUBLIC ${_cfp_extra_libdirs})
+        set_target_properties(${_t} PROPERTIES
+          BUILD_RPATH   "${_cfp_extra_libdirs}"
+          INSTALL_RPATH "${_cfp_extra_libdirs}")
+      endif()
+    endforeach()
+  endif()
 endif()
