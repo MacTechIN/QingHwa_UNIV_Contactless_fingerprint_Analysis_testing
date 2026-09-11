@@ -13,7 +13,8 @@
 | [docs/README.md](docs/README.md) | 논문 3편 변환본 + 구현 기술 리서치 |
 | [docs/03_.../research.md](docs/03_chowdhury2022_dl_review/research.md) | 구현에 필요한 관련기술 총정리 |
 | [docs/03_.../dev_plan.md](docs/03_chowdhury2022_dl_review/dev_plan.md) | 개발 계획서 (수직 절편 V0~V9 / µ-step) |
-| **[docs/03_.../code_review.md](docs/03_chowdhury2022_dl_review/code_review.md)** | **코드리뷰 + 실촬영 검증 결과 (발표자료용)** |
+| **[docs/03_.../code_review.md](docs/03_chowdhury2022_dl_review/code_review.md)** | **코드리뷰 + 실촬영 검증 결과** |
+| **[docs/03_.../presentation.html](docs/03_chowdhury2022_dl_review/presentation.html)** | **면접용 발표자료 (논문 이해도·구현 근거 정리, HTML)** |
 
 ## 파이프라인
 

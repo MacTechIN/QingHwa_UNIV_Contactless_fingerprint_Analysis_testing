@@ -1,0 +1,589 @@
+<title>비접촉 지문인식 논문 구현</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap">
+<style>
+:root{
+  --paper:#f6f8f9;
+  --surface:#ffffff;
+  --sunken:#eef2f4;
+  --ink:#12181c;
+  --body:#333e45;
+  --muted:#66757e;
+  --rule:#d8e0e4;
+  --rule-soft:#e7edf0;
+  --accent:#0f6f8c;      /* 500nm 청색광 계열 — Oduah 2021이 최적으로 보고한 파장 */
+  --accent-soft:#e3eff3;
+  --ending:#2f7d4c;      /* 융선 끝점 CN=1 — 앱 오버레이 색 */
+  --bifur:#b06412;       /* 융선 분기점 CN=3 — 앱 오버레이 색 */
+  --warn:#a8500f;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e1316; --surface:#151c21; --sunken:#111a1f;
+    --ink:#e8eef1; --body:#bcc8ce; --muted:#7f909a;
+    --rule:#26333a; --rule-soft:#1d282e;
+    --accent:#5bb8d4; --accent-soft:#132d38;
+    --ending:#63c489; --bifur:#e0a154; --warn:#e0a154;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e1316; --surface:#151c21; --sunken:#111a1f;
+  --ink:#e8eef1; --body:#bcc8ce; --muted:#7f909a;
+  --rule:#26333a; --rule-soft:#1d282e;
+  --accent:#5bb8d4; --accent-soft:#132d38;
+  --ending:#63c489; --bifur:#e0a154; --warn:#e0a154;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--body);
+  font-family:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  font-weight:400; font-size:16px; line-height:1.78;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:840px; margin:0 auto; padding-inline:24px; padding-block:56px 96px}
+h1,h2,h3{color:var(--ink); text-wrap:balance; margin:0}
+h1{font-size:clamp(28px,4.4vw,40px); font-weight:700; line-height:1.24; letter-spacing:-.02em}
+h2{font-size:22px; font-weight:600; line-height:1.35; letter-spacing:-.01em}
+h3{font-size:16.5px; font-weight:600; line-height:1.45}
+p{margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+/* ── 표지 ── */
+header{display:flex; flex-direction:column; gap:18px; padding-bottom:34px; border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:"IBM Plex Mono",monospace; font-size:11.5px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--accent)}
+.lede{font-size:17.5px; line-height:1.75; color:var(--body); max-width:64ch}
+.byline{display:flex; flex-wrap:wrap; gap:8px 22px; font-size:13px; color:var(--muted)}
+.byline b{color:var(--body); font-weight:500}
+
+/* ── 섹션 ── */
+section{padding-block:44px; border-bottom:1px solid var(--rule-soft)}
+section:last-of-type{border-bottom:0}
+.shead{display:flex; align-items:baseline; gap:14px; margin-bottom:20px}
+.snum{font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:600;
+  color:var(--accent); letter-spacing:.06em; flex:none; padding-top:3px}
+.stack{display:flex; flex-direction:column; gap:18px}
+.stack>p{max-width:70ch}
+
+/* ── 논문 인용: 논문의 목소리 ── */
+blockquote{
+  margin:0; padding:16px 20px; background:var(--accent-soft);
+  border-left:3px solid var(--accent); border-radius:0 4px 4px 0;
+}
+blockquote p{font-family:"IBM Plex Serif",Georgia,serif; font-size:14.6px;
+  line-height:1.72; color:var(--ink)}
+blockquote cite{display:block; margin-top:9px; font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px; font-style:normal; color:var(--muted); letter-spacing:.02em}
+
+/* ── 표 ── */
+.tscroll{overflow-x:auto; border:1px solid var(--rule); border-radius:5px; background:var(--surface)}
+table{width:100%; border-collapse:collapse; font-size:13.6px; min-width:640px}
+th,td{text-align:left; padding:11px 13px; border-bottom:1px solid var(--rule-soft); vertical-align:top}
+thead th{background:var(--sunken); color:var(--muted); font-weight:600; font-size:11.5px;
+  letter-spacing:.07em; text-transform:uppercase; white-space:nowrap;
+  border-bottom:1px solid var(--rule)}
+tbody tr:last-child td{border-bottom:0}
+td.ref{font-family:"IBM Plex Mono",monospace; font-size:12.3px; color:var(--accent); white-space:nowrap}
+td.num{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap}
+td.code{font-family:"IBM Plex Mono",monospace; font-size:12.1px; color:var(--muted); white-space:nowrap}
+tbody tr.hl td{background:var(--accent-soft)}
+caption{caption-side:bottom; padding:10px 13px; font-size:12.3px; color:var(--muted); text-align:left}
+
+/* ── 측정치 스트립 ── */
+.measure{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+  background:var(--rule); border:1px solid var(--rule); border-radius:5px; overflow:hidden}
+.measure div{background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px}
+.measure dt{font-size:11.5px; color:var(--muted); letter-spacing:.03em}
+.measure dd{margin:0; font-family:"IBM Plex Mono",monospace; font-size:19px; font-weight:600;
+  color:var(--ink); font-variant-numeric:tabular-nums; line-height:1.25}
+.measure dd small{font-size:12px; font-weight:400; color:var(--muted); margin-left:3px}
+
+/* ── 발견 항목 ── */
+.find{display:flex; flex-direction:column; gap:9px; padding:18px 20px;
+  background:var(--surface); border:1px solid var(--rule); border-radius:5px;
+  border-left:3px solid var(--warn)}
+.find h3{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
+.find h3 .tag{font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600;
+  letter-spacing:.08em; color:var(--warn); border:1px solid currentColor;
+  padding:1px 6px; border-radius:3px; text-transform:uppercase}
+.find p{font-size:14.6px; line-height:1.72; max-width:none}
+.delta{font-family:"IBM Plex Mono",monospace; font-size:13.2px; color:var(--ink);
+  background:var(--sunken); padding:9px 13px; border-radius:4px;
+  font-variant-numeric:tabular-nums}
+
+/* ── 리스트 ── */
+ul.tri{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px}
+ul.tri li{padding-left:20px; position:relative; font-size:15px; line-height:1.72}
+ul.tri li::before{content:"▲"; position:absolute; left:0; top:1px;
+  font-size:8px; color:var(--accent)}
+ul.tri li b{color:var(--ink); font-weight:600}
+
+/* ── 차트 ── */
+figure{margin:0; display:flex; flex-direction:column; gap:10px}
+figure svg{width:100%; height:auto; display:block}
+figcaption{font-size:12.5px; color:var(--muted); line-height:1.6}
+.bar-lbl{font-family:"IBM Plex Sans KR",sans-serif; font-size:11.5px; fill:var(--body)}
+.bar-val{font-family:"IBM Plex Mono",monospace; font-size:11.5px; fill:var(--ink); font-weight:600}
+.bar-ax{font-family:"IBM Plex Mono",monospace; font-size:10px; fill:var(--muted)}
+.grid-l{stroke:var(--rule); stroke-width:1}
+
+footer{padding-top:34px; border-top:2px solid var(--ink); display:flex;
+  flex-direction:column; gap:10px; font-size:13.4px; color:var(--muted)}
+footer a{color:var(--accent); text-decoration:none; border-bottom:1px solid var(--rule)}
+footer a:hover,footer a:focus-visible{border-bottom-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (max-width:560px){
+  .wrap{padding-block:36px 64px}
+  .shead{gap:10px}
+}
+@media print{
+  body{background:#fff}
+  section{break-inside:auto}
+  .find,.measure,.tscroll,figure{break-inside:avoid}
+  @page{size:A4; margin:15mm}
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">논문 구현 검증 리포트</p>
+  <h1>비접촉 지문인식 논문을<br>Windows 네이티브 앱으로 구현하다</h1>
+  <p class="lede">
+    체계적 문헌고찰 한 편을 골라 그 안의 고전 파이프라인을 C++20으로 구현했다.
+    각 처리 단계가 논문의 어느 주장을 구현한 것인지 코드가 직접 들고 있고,
+    실행할 때마다 실측값과 대조한 결과를 문서로 출력한다.
+  </p>
+  <div class="byline">
+    <span><b>대상 논문</b> Chowdhury &amp; Imtiaz (2022), <i>J. Cybersecur. Priv.</i> 2(3):714–730</span>
+    <span><b>구현</b> C++20 · 4,875 LOC · 커밋 28</span>
+    <span><b>플랫폼</b> Windows (Win32 + Media Foundation + OpenCV)</span>
+  </div>
+</header>
+
+<!-- 1 -->
+<section>
+  <div class="shead"><span class="snum">01</span><h2>한 장 요약</h2></div>
+  <div class="stack">
+    <p>
+      리뷰 논문은 비접촉 지문인식의 획득·전처리·딥러닝을 정리하면서, 고전 방식이
+      비접촉 데이터에서 어디까지 무너지는지를 수치로 보고한다. 이 구현은 그 고전
+      경로를 그대로 재현하고, <b>논문이 예측한 취약성까지 함께 재현됐다.</b>
+      구현 실패가 아니라 재현 성공이며, 논문이 제시한 해법(딥 세그멘테이션·MinuNet·Siamese)이
+      왜 필요한지를 자체 수치로 뒷받침하는 근거를 확보한 것이 이 단계의 성과다.
+    </p>
+    <dl class="measure">
+      <div><dt>논문 → 구현 매핑</dt><dd>12<small>개 스택</small></dd></div>
+      <div><dt>단위·통합 테스트</dt><dd>30 / 30</dd></div>
+      <div><dt>실측으로 발견한 결함</dt><dd>17<small>건</small></dd></div>
+      <div><dt>종단 처리 시간</dt><dd>230<small>ms</small></dd></div>
+    </dl>
+    <ul class="tri">
+      <li><b>논문 추적성을 코드에 내장했다.</b> 각 스택이 논문의 절·원문 인용·원저를 들고 있고, 실행 시 실측값과 대조한 결론을 생성한다. 문서와 코드가 따로 노는 것을 구조로 막았다.</li>
+      <li><b>정적 리뷰로는 못 잡는 결함을 실측으로 찾았다.</b> 30개 테스트를 모두 통과한 코드가, 사진 한 장을 5° 돌리자 인식 점수가 26배 무너졌다.</li>
+      <li><b>논문이 비운 자리를 채웠다.</b> 리뷰는 정확도만 보고한다. 인증 시스템을 자처하려면 EER·DET·CMC가 필요하다는 판단으로 지표 계산기를 따로 구현했다.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 2 -->
+<section>
+  <div class="shead"><span class="snum">02</span><h2>논문 구조와 구현 범위의 대응</h2></div>
+  <div class="stack">
+    <p>
+      리뷰 논문은 세 가지 연구 질문으로 구성된다. 촬영 방법(§3), 고전 전처리(§4),
+      딥러닝(§5)이다. 이 중 §3과 §4를 전면 구현하고, §5는 동일 인터페이스로
+      교체 가능한 <b>고전 대응물</b>을 구현해 기준선을 만들었다.
+    </p>
+    <div class="tscroll">
+      <table>
+        <caption>논문의 각 항목이 어느 코드로 구현됐는지, 그리고 무엇이 실측됐는지</caption>
+        <thead>
+          <tr><th>논문 위치</th><th>논문의 내용</th><th>구현</th><th>코드</th><th>실측</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ref">§3 Table 2</td>
+            <td>2D 획득 장치 정리. NIST SP 500-305이 균일 조명·배경 분리·모션 저감을 요구</td>
+            <td>Media Foundation 카메라. 노출·초점·화이트밸런스 수동 고정</td>
+            <td class="code">capture_mf.cpp</td>
+            <td class="num">1,159 ppi</td>
+          </tr>
+          <tr>
+            <td class="ref">§4 Table 3 ①</td>
+            <td>Finger Segmentation / Wang 2017 / YCbCr 피부색 추정</td>
+            <td>YCbCr 임계 + 최대 연결성분 + 주축 역회전</td>
+            <td class="code">segmenter_ycbcr.cpp</td>
+            <td class="num">마스크 72.1 %</td>
+          </tr>
+          <tr class="hl">
+            <td class="ref">§4 Table 3 ②</td>
+            <td>회전·피치 주축 추정 / Zaghetto 2015 / 인공신경망</td>
+            <td>minAreaRect 주축 + 해부학적 상하 판별로 180° 모호성 해소</td>
+            <td class="code">segmenter_ycbcr.cpp</td>
+            <td class="num">주축 −4.9°</td>
+          </tr>
+          <tr>
+            <td class="ref">§4 Table 3 ③</td>
+            <td>저대비 / Wang 2016 / CLAHE 및 확장</td>
+            <td>밴드패스 + 국소 RMS 정규화. CLAHE로는 음영이 제거되지 않아 교체</td>
+            <td class="code">enhancer_gabor.cpp</td>
+            <td class="num">coherence 0.989</td>
+          </tr>
+          <tr class="hl">
+            <td class="ref">§4 Table 3 ④</td>
+            <td>센서 거리 ↔ 융선 주파수 / Zaghetto 2017 / 주파수맵</td>
+            <td>융선 주기가 9 px가 되도록 스케일 정규화</td>
+            <td class="code">enhancer_gabor.cpp</td>
+            <td class="num">주기 8.55 px</td>
+          </tr>
+          <tr>
+            <td class="ref">§4 Table 3 ⑤</td>
+            <td>코어·특이점 검출 / Labati 2010 / Poincaré 방향장 분석</td>
+            <td>구조텐서 배각 공간 방향장</td>
+            <td class="code">enhancer_gabor.cpp</td>
+            <td class="num">—</td>
+          </tr>
+          <tr>
+            <td class="ref">§4 Enhancement</td>
+            <td>공간영역 + 주파수영역 향상 / Tang 2017 / Hessian + STFT</td>
+            <td>Gabor 필터뱅크. 가우시안(공간 국소성) × 정현파(주파수 선택성)</td>
+            <td class="code">enhancer_gabor.cpp</td>
+            <td class="num">융선 45.3 %</td>
+          </tr>
+          <tr>
+            <td class="ref">§4 Minutiae</td>
+            <td>미뉴셔·융선골 추출·방향 추정을 머신러닝으로 다뤄야 한다</td>
+            <td>Crossing Number + 방향장 일관성 기반 품질 필터</td>
+            <td class="code">minutiae_cn.cpp</td>
+            <td class="num">107 개</td>
+          </tr>
+          <tr>
+            <td class="ref">§5 MinuNet</td>
+            <td>ContactlessMinuNet: hourglass 인코더 + 위치(sigmoid)·방향(tanh) 2브랜치. 94.10 % (기존 89.61 %)</td>
+            <td>고전 대응물 구현. 동일 인터페이스라 ONNX 모델 준비 시 코드 변경 없이 교체</td>
+            <td class="code">abstractions.hpp</td>
+            <td class="num">미구현</td>
+          </tr>
+          <tr>
+            <td class="ref">§5 Siamese</td>
+            <td>영상 쌍의 일치·불일치를 같은 망에서 학습</td>
+            <td>국소구조 서술자 + 강체변환 투표(RANSAC 계열)</td>
+            <td class="code">matcher_minutiae.cpp</td>
+            <td class="num">동일영상 1.000</td>
+          </tr>
+          <tr>
+            <td class="ref">§5 Table 4</td>
+            <td>EER·rank-1로 성능 보고</td>
+            <td>EER·DET·CMC·AUC 계산기. 해석적 기대값으로 검증</td>
+            <td class="code">metrics.cpp</td>
+            <td class="num">테스트 12/12</td>
+          </tr>
+          <tr>
+            <td class="ref">§6 Discussion</td>
+            <td>대규모 데이터셋 부재, 컴퓨팅 자원 등 6대 미해결 과제</td>
+            <td>범위 밖 항목을 명시하고 백로그로 이관</td>
+            <td class="code">code_review.md</td>
+            <td class="num">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section>
+  <div class="shead"><span class="snum">03</span><h2>논문의 한 문장을 구현 결정으로 옮긴 사례</h2></div>
+  <div class="stack">
+    <p>
+      표의 한 행을 읽고 무엇을 만들지 정하는 과정을 두 가지만 구체적으로 보인다.
+      리뷰가 <b>왜 두 항목을 한 행에 묶었는지</b>를 이해했는가가 갈림길이었다.
+    </p>
+
+    <blockquote>
+      <p>Distance to the sensor, ridge line frequency — Frequency map, sensor-finger distance approximation.</p>
+      <cite>§4 Table 3, 원저 Zaghetto et al. 2017</cite>
+    </blockquote>
+    <p>
+      이 행은 <b>촬영거리</b>와 <b>융선 주파수</b>를 하나로 묶는다. 비접촉에서는
+      거리가 배율을 결정하고, 배율이 융선 주기를 통째로 이동시키기 때문이다.
+      같은 손가락도 주기가 4 px일 수도 20 px일 수도 있다.
+      그래서 고정 픽셀 크기로 리샘플하면 안 되고, <b>융선 주기를 기준으로</b>
+      리샘플해야 한다는 결론이 나온다. 목표 주기를 9 px로 두고 영상을 다시
+      표본화하도록 구현했다. 부수 효과가 더 컸다 — 두 촬영본의 배율이 자동으로
+      정렬되어 미뉴셔 좌표가 배율 불변이 되고, 매칭이 안정된다.
+    </p>
+
+    <blockquote>
+      <p>To improve image contrast and sharpness, image enhancement techniques such as spatial domain techniques and frequency domain techniques can be used to improve the quality.</p>
+      <cite>§4 Fingerprint Image Enhancement, 원저 Tang et al. 2017 (Hessian matrix + STFT)</cite>
+    </blockquote>
+    <p>
+      공간영역과 주파수영역을 <b>동시에</b> 만족시키라는 요구다.
+      Gabor 필터는 가우시안(공간 국소성)과 정현파(주파수 선택성)의 곱이므로
+      이 조건을 하나의 커널로 충족한다. 논문이 인용한 Hessian+STFT와 목적은 같고
+      수단이 다르다. 구현에서 가장 실수가 잦은 지점은 축 방향이었다 — 코사인이
+      융선의 <b>법선</b>을 따라 진동해야 융선·골 주기와 맞물린다. 융선 방향을 따라
+      진동시키면 정반대가 된다.
+    </p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section>
+  <div class="shead"><span class="snum">04</span><h2>논문이 예측한 실패를 그대로 재현하다</h2></div>
+  <div class="stack">
+    <p>
+      리뷰 Table 4는 비접촉↔접촉 교차 매칭에서 세 방식을 비교한다.
+      이 구현은 두 번째 축, 즉 <b>고전 미뉴셔 매처의 자리</b>에 있다.
+      실측된 취약성은 논문이 그 자리에 대해 보고한 내용과 일치한다.
+    </p>
+
+    <figure>
+      <svg viewBox="0 0 684 210" role="img" aria-label="리뷰 Table 4의 EER 비교. 고전 NIST 미뉴셔 매처 43.83%, 변형보정 모델 16.17%, 논문 제안 딥 기법 7.93%.">
+        <line class="grid-l" x1="188" y1="24" x2="188" y2="162"></line>
+        <line class="grid-l" x1="288" y1="24" x2="288" y2="162"></line>
+        <line class="grid-l" x1="388" y1="24" x2="388" y2="162"></line>
+        <line class="grid-l" x1="488" y1="24" x2="488" y2="162"></line>
+        <line class="grid-l" x1="588" y1="24" x2="588" y2="162"></line>
+        <text class="bar-ax" x="188" y="178" text-anchor="middle">0</text>
+        <text class="bar-ax" x="288" y="178" text-anchor="middle">10</text>
+        <text class="bar-ax" x="388" y="178" text-anchor="middle">20</text>
+        <text class="bar-ax" x="488" y="178" text-anchor="middle">30</text>
+        <text class="bar-ax" x="588" y="178" text-anchor="middle">40</text>
+        <text class="bar-ax" x="388" y="198" text-anchor="middle">EER (%) · 낮을수록 좋음 · dataset A</text>
+
+        <text class="bar-lbl" x="178" y="45" text-anchor="end">NIST 미뉴셔 매처</text>
+        <rect x="188" y="32" width="438" height="18" rx="2" fill="var(--warn)"></rect>
+        <text class="bar-val" x="634" y="45">43.83</text>
+
+        <text class="bar-lbl" x="178" y="89" text-anchor="end">변형보정 모델</text>
+        <rect x="188" y="76" width="162" height="18" rx="2" fill="var(--bifur)"></rect>
+        <text class="bar-val" x="358" y="89">16.17</text>
+
+        <text class="bar-lbl" x="178" y="133" text-anchor="end">논문 제안 (딥)</text>
+        <rect x="188" y="120" width="79" height="18" rx="2" fill="var(--ending)"></rect>
+        <text class="bar-val" x="275" y="133">7.93</text>
+      </svg>
+      <figcaption>
+        출처: Chowdhury &amp; Imtiaz (2022) Table 4. 본 구현은 맨 위 칸의 자리에 해당한다.
+        피험자 1명으로는 EER을 산출할 수 없어 자체 수치는 표시하지 않았다.
+      </figcaption>
+    </figure>
+
+    <p>
+      자체 실측도 같은 방향을 가리킨다. 매처 자체는 정상이다 — 동일 영상과 순수
+      평행이동에서 정확히 1.000이 나온다. 그런데 변형을 주면 급격히 떨어진다.
+    </p>
+    <div class="tscroll">
+      <table>
+        <caption>논문 도판의 실촬영본에 변형을 가해 측정. 미뉴셔 수가 줄어드는 것이 점수 하락의 직접 원인이다</caption>
+        <thead><tr><th>조건</th><th>미뉴셔</th><th>정합(inlier)</th><th>스코어</th></tr></thead>
+        <tbody>
+          <tr><td>동일 영상</td><td class="num">107</td><td class="num">107</td><td class="num">1.000</td></tr>
+          <tr><td>평행이동만</td><td class="num">107</td><td class="num">107</td><td class="num">1.000</td></tr>
+          <tr><td>회전 5°</td><td class="num">74</td><td class="num">33</td><td class="num">0.371</td></tr>
+          <tr><td>회전 11° + 노출 변화</td><td class="num">72</td><td class="num">29</td><td class="num">0.330</td></tr>
+          <tr><td>회전 11° + 블러</td><td class="num">72</td><td class="num">36</td><td class="num">0.410</td></tr>
+          <tr class="hl"><td>복합 열화 전부</td><td class="num">24</td><td class="num">10</td><td class="num">0.153</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      병목은 매칭이 아니라 <b>미뉴셔 재현성</b>이다. 회전 5°만으로 미뉴셔가
+      107개에서 74개로 준다. 리뷰가 고전 방식의 EER을 43.83 %로 보고한 이유가
+      이 지점에 있다.
+    </p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section>
+  <div class="shead"><span class="snum">05</span><h2>실측으로만 드러난 결함</h2></div>
+  <div class="stack">
+    <p>
+      이 프로젝트에서 가장 값이 나간 구간이다. 30개 테스트를 모두 통과한 코드가
+      실제 사진 앞에서 무너졌고, 원인은 코드를 읽어서는 보이지 않는 곳에 있었다.
+    </p>
+
+    <div class="find">
+      <h3><span class="tag">치명</span>세그멘테이션 180° 축 모호성</h3>
+      <p>
+        <span class="mono">cv::minAreaRect</span>의 각도는 180° 모듈로다. 수학적으로
+        175.1°와 −4.9°는 같은 축이지만, 그 값을 그대로 회전각으로 쓰면 손가락이 거의
+        거꾸로 선다. 그 상태에서 위쪽을 지두로 잘라내면 실제로는 손가락 <b>밑동</b>을 자른다.
+      </p>
+      <div class="delta">같은 사진을 5° 회전 → 미뉴셔 20개(기존 11개) · 스코어 0.338(기존 0.013) = 26배</div>
+      <p>
+        해소는 두 단계로 했다. 각도를 (−90°, 90°]로 접고, 남은 상하 반전은
+        <b>손가락 끝이 밑동보다 좁다</b>는 해부학적 사실로 판별한다.
+        역회전한 마스크에서 위쪽 1/4과 아래쪽 1/4의 면적을 비교해 위가 넓으면 뒤집힌 것이다.
+      </p>
+    </div>
+
+    <div class="find">
+      <h3><span class="tag">높음</span>음영을 융선으로 오인</h3>
+      <p>
+        손가락은 곡면이라 가장자리로 갈수록 어두워지는 완만한 음영이 항상 있다.
+        CLAHE는 국소 히스토그램을 늘릴 뿐 이 저주파 성분을 제거하지 못한다.
+        그 결과 Gabor가 융선 대신 <b>음영의 등고선</b>을 잡아 매끈한 동심원 곡선을 만들었다.
+        밴드패스로 교체해 목표 주기의 1.2배로 흐린 영상을 빼고, 국소 RMS로 나눠 대비를 균일화했다.
+      </p>
+      <div class="delta">실촬영본 미뉴셔 75개(기존 12개) · 일관성 0.994</div>
+    </div>
+
+    <div class="find">
+      <h3><span class="tag">높음</span>세선화가 마스크 경계를 융선으로 추적</h3>
+      <p>
+        이진 영상에서 마스크 경계는 그 자체로 큰 연결영역의 테두리다.
+        Zhang-Suen은 이 테두리를 1픽셀 곡선으로 그대로 추적한다. 그 결과 손가락
+        윤곽을 따라가는 가짜 융선이 생기고, 진짜 융선이 거기 T자로 붙으면서
+        존재하지 않는 분기점이 대량 생성됐다.
+      </p>
+      <div class="delta">골격 4,315 px(기존 5,459 px) · 윤곽 아티팩트 소멸</div>
+    </div>
+
+    <p>
+      세 건 모두 <b>사진을 넣고 돌려보지 않으면 발견되지 않는다.</b>
+      합성 데이터로 만든 테스트 픽스처는 오히려 결함을 은폐하고 있었다 —
+      합성 손가락이 대칭 타원이라 "끝이 좁다"는 판별이 동전던지기가 됐고,
+      융선이 끊기지 않아 미뉴셔가 4개뿐이었다. 픽스처를 해부학적으로 맞추고
+      위상 특이점을 주입한 뒤에야 테스트가 실제 사진과 같은 조건이 됐다.
+    </p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section>
+  <div class="shead"><span class="snum">06</span><h2>논문이 비운 자리를 채운 것</h2></div>
+  <div class="stack">
+    <p>
+      리뷰를 그대로 따라가면 빠지는 것이 있다. 무엇이 빠졌는지 알아보는 것도
+      논문을 읽는 일의 일부라고 봤다.
+    </p>
+    <ul class="tri">
+      <li><b>표준 생체 지표.</b> 리뷰가 인용한 연구 상당수가 정확도만 보고한다. 인증 시스템은 개집합 검증이므로 EER·DET·CMC 없이는 성능을 말할 수 없다(ISO/IEC 19795-1). 지표 계산기를 따로 구현하고, 대칭 중첩 분포의 EER이 정확히 1/6이 되는 해석적 기대값으로 검증했다.</li>
+      <li><b>동점 처리.</b> CMC에서 동점을 유리하게 세면 모든 스코어가 같은 퇴화 매처가 rank-1 100 %를 받는 착시가 생긴다. 동점을 불리하게 세도록 구현하고 그 착시를 테스트로 고정했다.</li>
+      <li><b>범위 밖의 명시.</b> 위조 방지(PAD, ISO/IEC 30107-3)와 템플릿 보호(ISO/IEC 24745)는 이 단계에서 구현하지 않았다. 구현하지 않았다는 사실과 그 이유를 문서에 남기는 편이, 목록만 채우는 것보다 정직하다고 판단했다.</li>
+      <li><b>생체정보 취급.</b> 원본 비저장을 기본으로 두고, 저장소에 지문 원본이 커밋되지 않도록 차단했다. 검증용 샘플은 구현 대상 논문에 이미 게재된 도판에서 추출했다.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 7 -->
+<section>
+  <div class="shead"><span class="snum">07</span><h2>판단이 필요했던 지점</h2></div>
+  <div class="stack">
+
+    <h3>함수 하나 때문에 의존성 그래프가 번졌다</h3>
+    <p>
+      세선화를 위해 OpenCV contrib의 <span class="mono">ximgproc::thinning</span> 하나를 썼다.
+      그 하나가 <span class="mono">contrib → dnn → protobuf → abseil</span>로 이어져
+      Windows 빌드가 abseil에서 실패했다. 쓰지도 않는 dnn 때문이었다.
+      Zhang-Suen을 직접 구현하고 OpenCV 구현과 대조 검증했다.
+    </p>
+    <div class="tscroll">
+      <table>
+        <caption>자체 Zhang-Suen 구현과 OpenCV ximgproc::thinning의 픽셀 단위 대조</caption>
+        <thead><tr><th>입력</th><th>OpenCV</th><th>자체</th><th>불일치</th></tr></thead>
+        <tbody>
+          <tr><td>사각형</td><td class="num">60 px</td><td class="num">60 px</td><td class="num">0</td></tr>
+          <tr><td>원(고리)</td><td class="num">438 px</td><td class="num">438 px</td><td class="num">0</td></tr>
+          <tr><td>평행선(융선 모사)</td><td class="num">965 px</td><td class="num">965 px</td><td class="num">0</td></tr>
+          <tr><td>Y자 분기</td><td class="num">237 px</td><td class="num">237 px</td><td class="num">0</td></tr>
+          <tr><td>실제 지문 이진화</td><td class="num">4,389 px</td><td class="num">4,369 px</td><td class="num">20 (0.46 %)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      구조적 입력에서는 픽셀 단위로 완전히 일치한다. 차이는 경계 처리 규약에서 나온다 —
+      OpenCV는 테두리를 세선화하지 않고, 자체 구현은 바깥을 배경으로 보고 처리한다.
+      지문 ROI는 마스크로 경계에서 떨어져 있어 실질 영향이 없다.
+      결과적으로 OpenCV 의존이 core·imgproc·imgcodecs로 줄고 빌드 시간이 30~40분에서 5~15분이 됐다.
+    </p>
+
+    <h3>OpenCV 5.0 API 이동은 추측하지 않고 확인했다</h3>
+    <p>
+      MSVC에서 <span class="mono">contourArea</span>·<span class="mono">minAreaRect</span>·<span class="mono">getRotationMatrix2D</span>가
+      "cv의 멤버가 아니다"로 실패했다. 헤더는 정상적으로 읽히는데 선언이 없었다.
+      OpenCV 5.x 브랜치 헤더를 받아 코드가 쓰는 API 33개의 소속 모듈을 전수 확인했다.
+      이동한 것은 정확히 3개, 새로 생긴 <span class="mono">geometry</span> 모듈로 갔고,
+      영향받는 파일도 하나뿐이었다. 버전 분기를 한 헤더에 모아 4.x와 5.x를 모두 지원하도록 했다.
+    </p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section>
+  <div class="shead"><span class="snum">08</span><h2>검증 체계</h2></div>
+  <div class="stack">
+    <p>
+      개발 환경은 Linux, 타깃은 Windows다. 이 간극을 메우기 위해 세 축으로 검증했다.
+    </p>
+    <dl class="measure">
+      <div><dt>Linux 빌드 · 테스트</dt><dd>30 / 30</dd></div>
+      <div><dt>OpenCV 5.x 헤더 문법</dt><dd>16 / 16</dd></div>
+      <div><dt>Windows 크로스컴파일</dt><dd>18 / 18</dd></div>
+    </dl>
+    <ul class="tri">
+      <li><b>OpenCV 의존과 비의존을 분리했다.</b> 매칭·평가·해설은 OpenCV에 의존하지 않는다. 덕분에 OpenCV 설치 전에도 그 로직을 먼저 검증할 수 있었고, CI가 가벼워진다.</li>
+      <li><b>실패를 예외가 아니라 값으로 다뤘다.</b> "손가락이 안 보인다"는 버그가 아니라 정상 상태다. 초당 30프레임 루프에서 예외를 던지면 비용과 try/catch 부담이 계속 발생한다.</li>
+      <li><b>인터페이스를 먼저 고정했다.</b> 결함 수정 세 건이 모두 구현체 내부에서 끝났고 파이프라인 코드는 거의 그대로 유지됐다. 고전 경로와 딥 경로가 같은 계약을 구현하므로 조립부만 바꿔 A/B 비교가 된다.</li>
+    </ul>
+    <div class="tscroll">
+      <table>
+        <caption>단계별 소요 시간. 실촬영본 684×1059, Release, 단일 코어</caption>
+        <thead><tr><th>단계</th><th>소요</th><th>단계</th><th>소요</th></tr></thead>
+        <tbody>
+          <tr><td>획득</td><td class="num">12.2 ms</td><td>향상 4단계</td><td class="num">58.8 ms</td></tr>
+          <tr><td>품질 게이트</td><td class="num">48.0 ms</td><td>미뉴셔 추출</td><td class="num">2.3 ms</td></tr>
+          <tr><td>분할 · ROI 정규화</td><td class="num">49.8 ms</td><td><b>합계</b></td><td class="num"><b>≈ 230 ms</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section>
+  <div class="shead"><span class="snum">09</span><h2>한계</h2></div>
+  <div class="stack">
+    <p>
+      성과만큼 한계도 분명히 둔다. 심사에서 이 부분을 먼저 확인하실 것으로 본다.
+    </p>
+    <ul class="tri">
+      <li><b>EER을 산출하지 못했다.</b> 피험자 1명, 손가락 1개다. 계산기는 구현했고 해석적 기대값으로 검증했지만, 통계적 의미를 가지려면 공개 데이터셋(PolyU 등) 확보가 선결이다.</li>
+      <li><b>"재촬영"은 모사다.</b> 물리적으로 두 번 촬영한 것이 아니라 원본에 회전·이동·노출·블러·잡음을 가한 것이다. 실제 재촬영은 3D 자세 변화와 피부 변형까지 포함하므로 더 어렵다.</li>
+      <li><b>촬영 품질이 병목이다.</b> 실측 선명도가 4.0 수준으로, 우리 자신의 품질 게이트가 불합격 판정을 내린다. 융선이 표본화 한계 근처라 회전 5°만으로 미뉴셔가 30 % 줄었다. 근본 개선은 알고리즘이 아니라 획득 쪽에 있다.</li>
+      <li><b>딥 경로는 미구현이다.</b> 인터페이스와 검증 체계는 갖췄으나 U-Net 세그멘테이션과 MinuNet은 아직 기준선을 대체하지 못했다. 리뷰가 보고한 격차(94.10 % 대 89.61 %)를 직접 재현하는 것이 다음 단계다.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 10 -->
+<section>
+  <div class="shead"><span class="snum">10</span><h2>확인하실 수 있는 것</h2></div>
+  <div class="stack">
+    <p>
+      주장을 문서로만 남기지 않았다. 앱을 한 번 실행하면 각 단계가 어느 논문 절을
+      구현한 것인지, 원문이 무엇이라고 했는지, 이번 입력에서 실제로 어떤 수치가
+      나왔는지를 함께 출력하고 HTML·PDF 보고서로 저장한다.
+    </p>
+    <div class="delta">[5] 융선 방향장 &nbsp;·&nbsp; 논문 근거 §4 Table 3 (원저 Labati 2010)<br>&nbsp; 이번 실행 → 일관성 0.989 &nbsp;·&nbsp; 대조 결론 → Gabor 튜닝의 전제 충족</div>
+    <ul class="tri">
+      <li>저장소에 논문 원문 PDF, markitdown 변환본, 구현 기술 리서치, 개발 계획서, 코드리뷰가 모두 들어 있다.</li>
+      <li>코드리뷰 문서는 발견한 결함 17건을 심각도와 함께 공개하고, 그중 무엇을 고쳤고 무엇을 백로그로 남겼는지 명시한다.</li>
+      <li>빌드는 스크립트 한 줄이다. OpenCV 프리빌트가 있으면 자동 탐색해 vcpkg 단계를 건너뛴다.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>Chowdhury, A. M. M. &amp; Imtiaz, M. H. (2022). Contactless Fingerprint Recognition Using Deep Learning—A Systematic Review. <i>Journal of Cybersecurity and Privacy</i>, 2(3), 714–730. CC BY 4.0</p>
+  <p>구현 저장소 · <a href="https://github.com/MacTechIN/QingHwa_UNIV_Contactless_fingerprint_Analysis_testing">MacTechIN/QingHwa_UNIV_Contactless_fingerprint_Analysis_testing</a></p>
+  <p>Sam LEE · hotnewton@korea.ac.kr</p>
+</footer>
+
+</div>
