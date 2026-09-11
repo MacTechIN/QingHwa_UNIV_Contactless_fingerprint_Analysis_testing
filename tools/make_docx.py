@@ -154,7 +154,7 @@ def measures(pairs):
         cell_text(vc, v, 14, True, INK, MONO, WD_ALIGN_PARAGRAPH.CENTER)
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
-def finding(tag, title, body_text, delta):
+def finding(tag, title, body_text, delta, image=None, image_mm=None, caption=None):
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(8); p.paragraph_format.space_after = Pt(3)
     p.paragraph_format.keep_with_next = True
@@ -174,6 +174,16 @@ def finding(tag, title, body_text, delta):
     sh = OxmlElement('w:shd'); sh.set(qn('w:val'),'clear'); sh.set(qn('w:fill'),'EEF2F4')
     pPr.append(sh)
     set_font(d.add_run('  ' + delta + '  '), MONO, 9.5, False, INK)
+    if image:
+        doc.add_picture(image, width=Mm(image_mm or 200))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.paragraphs[-1].paragraph_format.space_before = Pt(4)
+        doc.paragraphs[-1].paragraph_format.space_after = Pt(2)
+        if caption:
+            cp = doc.add_paragraph()
+            cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cp.paragraph_format.space_after = Pt(10)
+            set_font(cp.add_run(caption), KR, 8, False, MUTED)
 
 # =============================================================================
 #  표지
@@ -298,12 +308,18 @@ finding('높음','음영을 융선으로 오인',
  '손가락은 곡면이라 가장자리로 갈수록 어두워지는 완만한 음영이 항상 있다. CLAHE는 국소 히스토그램을 늘릴 뿐 '
  '이 저주파 성분을 제거하지 못한다. 그 결과 Gabor가 융선 대신 **음영의 등고선**을 잡아 매끈한 동심원 곡선을 '
  '만들었다. 밴드패스로 교체해 목표 주기의 1.2배로 흐린 영상을 빼고, 국소 RMS로 나눠 대비를 균일화했다.',
- '실촬영본 미뉴셔 75개(기존 12개) · 일관성 0.994')
+ '실촬영본 미뉴셔 75개(기존 12개) · 일관성 0.994',
+ image='assets/figures/fig_shading.png', image_mm=232,
+ caption='왼쪽은 앱이 실제로 출력했던 결과다. 융선이 아니라 손가락 곡면의 음영 등고선을 잡고 있다.')
+doc.add_page_break()
+doc.add_page_break()
 finding('높음','세선화가 마스크 경계를 융선으로 추적',
  '이진 영상에서 마스크 경계는 그 자체로 큰 연결영역의 테두리다. Zhang-Suen은 이 테두리를 1픽셀 곡선으로 '
  '그대로 추적한다. 그 결과 손가락 윤곽을 따라가는 가짜 융선이 생기고, 진짜 융선이 거기 T자로 붙으면서 '
  '존재하지 않는 분기점이 대량 생성됐다.',
- '골격 4,315 px(기존 5,459 px) · 윤곽 아티팩트 소멸')
+ '골격 4,315 px(기존 5,459 px) · 윤곽 아티팩트 소멸',
+ image='assets/figures/fig_skeleton.png', image_mm=138,
+ caption='세선화가 마스크 테두리를 1픽셀 곡선으로 추적한 흔적이 왼쪽 윤곽선이다.')
 para('세 건 모두 사진을 넣고 돌려보지 않으면 발견되지 않는다. 합성 데이터로 만든 테스트 픽스처는 오히려 '
      '결함을 은폐하고 있었다 — 합성 손가락이 대칭 타원이라 "끝이 좁다"는 판별이 동전던지기가 됐고, 융선이 '
      '끊기지 않아 미뉴셔가 4개뿐이었다. 픽스처를 해부학적으로 맞추고 위상 특이점을 주입한 뒤에야 테스트가 '
